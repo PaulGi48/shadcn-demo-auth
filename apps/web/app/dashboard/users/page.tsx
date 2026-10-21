@@ -2,6 +2,9 @@
 "use client"
 
 import * as React from "react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import {
   FiEdit2,
   FiPlus,
@@ -22,133 +25,90 @@ import {
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
 
-type UserStatus = "Active" | "Inactive"
+import {
+  useUsersStore,
+  type UserRecord,
+  type UserRole,
+  type UserStatus,
+} from "@/stores/users-store"
 
-type UserRecord = {
-  id: number
-  name: string
-  email: string
-  role: string
-  status: UserStatus
-}
+const userSchema = z.object({
+  name: z.string().trim().min(2, "Name must contain at least 2 characters."),
+  email: z.string().trim().email("Enter a valid email address."),
+  role: z.enum(["Administrator", "Editor", "Viewer"]),
+  status: z.enum(["Active", "Inactive"]),
+})
 
-const STORAGE_KEY = "demo-dashboard-users"
-
-const initialUsers: UserRecord[] = [
-  {
-    id: 1,
-    name: "Amara Okafor",
-    email: "amara@example.com",
-    role: "Administrator",
-    status: "Active",
-  },
-  {
-    id: 2,
-    name: "Daniel Adeyemi",
-    email: "daniel@example.com",
-    role: "Editor",
-    status: "Active",
-  },
-  {
-    id: 3,
-    name: "Zara Ibrahim",
-    email: "zara@example.com",
-    role: "Viewer",
-    status: "Inactive",
-  },
-  {
-    id: 4,
-    name: "David Eze",
-    email: "david@example.com",
-    role: "Editor",
-    status: "Active",
-  },
-  {
-    id: 5,
-    name: "Tomiwa Bello",
-    email: "tomiwa@example.com",
-    role: "Viewer",
-    status: "Inactive",
-  },
-]
+type UserFormValues = z.infer<typeof userSchema>
 
 export default function UsersPage() {
-  const [users, setUsers] = React.useState<UserRecord[]>([])
+  const users = useUsersStore((state) => state.users)
+  const hasHydrated = useUsersStore((state) => state.hasHydrated)
+  const addUser = useUsersStore((state) => state.addUser)
+  const updateUser = useUsersStore((state) => state.updateUser)
+  const deleteUserFromStore = useUsersStore((state) => state.deleteUser)
+
   const [search, setSearch] = React.useState("")
   const [showForm, setShowForm] = React.useState(false)
   const [editingId, setEditingId] = React.useState<number | null>(null)
-  const [name, setName] = React.useState("")
-  const [email, setEmail] = React.useState("")
-  const [role, setRole] = React.useState("Viewer")
-  const [status, setStatus] = React.useState<UserStatus>("Active")
   const [formError, setFormError] = React.useState("")
 
-  React.useEffect(() => {
-    try {
-      const savedUsers = localStorage.getItem(STORAGE_KEY)
-
-      if (savedUsers) {
-        const parsed: unknown = JSON.parse(savedUsers)
-
-        if (Array.isArray(parsed)) {
-          setUsers(parsed as UserRecord[])
-          return
-        }
-      }
-
-      setUsers(initialUsers)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialUsers))
-    } catch {
-      setUsers(initialUsers)
-    }
-  }, [])
-
-  function saveUsers(updatedUsers: UserRecord[]) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUsers))
-      setUsers(updatedUsers)
-      setFormError("")
-    } catch {
-      setFormError("Unable to save changes in this browser.")
-    }
-  }
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setError,
+    clearErrors,
+    formState: { errors, isSubmitting },
+  } = useForm<UserFormValues>({
+    resolver: zodResolver(userSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      role: "Viewer",
+      status: "Active",
+    },
+  })
 
   function openAddForm() {
     setEditingId(null)
-    setName("")
-    setEmail("")
-    setRole("Viewer")
-    setStatus("Active")
     setFormError("")
+    clearErrors()
+    reset({
+      name: "",
+      email: "",
+      role: "Viewer",
+      status: "Active",
+    })
     setShowForm(true)
   }
 
   function openEditForm(user: UserRecord) {
     setEditingId(user.id)
-    setName(user.name)
-    setEmail(user.email)
-    setRole(user.role)
-    setStatus(user.status)
     setFormError("")
+    clearErrors()
+    reset({
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+    })
     setShowForm(true)
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  function closeForm() {
+    setShowForm(false)
+    setEditingId(null)
     setFormError("")
+    clearErrors()
+    reset()
+  }
 
-    const cleanName = name.trim()
-    const cleanEmail = email.trim().toLowerCase()
+  async function onSubmit(values: UserFormValues) {
+    setFormError("")
+    clearErrors()
 
-    if (!cleanName || !cleanEmail) {
-      setFormError("Please enter the user's name and email.")
-      return
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      setFormError("Please enter a valid email address.")
-      return
-    }
+    const cleanEmail = values.email.trim().toLowerCase()
 
     const emailIsUsed = users.some(
       (user) =>
@@ -157,50 +117,41 @@ export default function UsersPage() {
     )
 
     if (emailIsUsed) {
-      setFormError("A user with this email already exists.")
+      setError("email", {
+        type: "manual",
+        message: "A user with this email already exists.",
+      })
       return
     }
 
-    const updatedUsers =
-      editingId !== null
-        ? users.map((user) =>
-            user.id === editingId
-              ? {
-                  ...user,
-                  name: cleanName,
-                  email: cleanEmail,
-                  role,
-                  status,
-                }
-              : user
-          )
-        : [
-            {
-              id: Date.now(),
-              name: cleanName,
-              email: cleanEmail,
-              role,
-              status,
-            },
-            ...users,
-          ]
+    const userData = {
+      name: values.name.trim(),
+      email: cleanEmail,
+      role: values.role as UserRole,
+      status: values.status as UserStatus,
+    }
 
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUsers))
-      setUsers(updatedUsers)
-      setShowForm(false)
-      setFormError("")
+      if (editingId !== null) {
+        updateUser(editingId, userData)
+      } else {
+        addUser(userData)
+      }
+
+      closeForm()
     } catch {
-      setFormError("Unable to save changes in this browser.")
+      setFormError("Unable to save changes. Please try again.")
     }
   }
 
-  function deleteUser(user: UserRecord) {
-    if (!window.confirm(`Are you sure you want to delete ${user.name}?`)) {
-      return
-    }
+  function handleDelete(user: UserRecord) {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${user.name}?`
+    )
 
-    saveUsers(users.filter((item) => item.id !== user.id))
+    if (confirmed) {
+      deleteUserFromStore(user.id)
+    }
   }
 
   const filteredUsers = users.filter((user) =>
@@ -208,6 +159,24 @@ export default function UsersPage() {
       .toLowerCase()
       .includes(search.trim().toLowerCase())
   )
+
+  const activeUsers = users.filter(
+    (user) => user.status === "Active"
+  ).length
+
+  const inactiveUsers = users.filter(
+    (user) => user.status === "Inactive"
+  ).length
+
+  if (!hasHydrated) {
+    return (
+      <div className="mx-auto max-w-7xl p-5 sm:p-8">
+        <p className="text-sm text-muted-foreground">
+          Loading users...
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-5 sm:p-8">
@@ -241,18 +210,14 @@ export default function UsersPage() {
         <Card className="rounded-2xl">
           <CardContent className="p-5">
             <p className="text-sm text-muted-foreground">Active users</p>
-            <p className="mt-2 text-2xl font-semibold">
-              {users.filter((user) => user.status === "Active").length}
-            </p>
+            <p className="mt-2 text-2xl font-semibold">{activeUsers}</p>
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl">
           <CardContent className="p-5">
             <p className="text-sm text-muted-foreground">Inactive users</p>
-            <p className="mt-2 text-2xl font-semibold">
-              {users.filter((user) => user.status === "Inactive").length}
-            </p>
+            <p className="mt-2 text-2xl font-semibold">{inactiveUsers}</p>
           </CardContent>
         </Card>
       </section>
@@ -332,7 +297,7 @@ export default function UsersPage() {
                           variant="outline"
                           size="sm"
                           aria-label={`Delete ${user.name}`}
-                          onClick={() => deleteUser(user)}
+                          onClick={() => handleDelete(user)}
                         >
                           <FiTrash2 size={15} />
                         </Button>
@@ -364,7 +329,7 @@ export default function UsersPage() {
       {showForm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
-          onClick={() => setShowForm(false)}
+          onClick={closeForm}
         >
           <Card
             className="w-full max-w-lg rounded-2xl"
@@ -381,26 +346,35 @@ export default function UsersPage() {
               </div>
 
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
                 aria-label="Close form"
-                onClick={() => setShowForm(false)}
+                onClick={closeForm}
               >
                 <FiX size={18} />
               </Button>
             </CardHeader>
 
             <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form
+                onSubmit={handleSubmit(onSubmit)}
+                noValidate
+                className="space-y-4"
+              >
                 <div className="space-y-2">
                   <Label htmlFor="user-name">Full name</Label>
                   <Input
                     id="user-name"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
                     placeholder="Enter full name"
-                    required
+                    aria-invalid={Boolean(errors.name)}
+                    {...register("name")}
                   />
+                  {errors.name && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.name.message}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -408,40 +382,50 @@ export default function UsersPage() {
                   <Input
                     id="user-email"
                     type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
                     placeholder="name@example.com"
-                    required
+                    aria-invalid={Boolean(errors.email)}
+                    {...register("email")}
                   />
+                  {errors.email && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.email.message}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="user-role">Role</Label>
                   <select
                     id="user-role"
-                    value={role}
-                    onChange={(event) => setRole(event.target.value)}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    {...register("role")}
                   >
                     <option value="Administrator">Administrator</option>
                     <option value="Editor">Editor</option>
                     <option value="Viewer">Viewer</option>
                   </select>
+                  {errors.role && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.role.message}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="user-status">Status</Label>
                   <select
                     id="user-status"
-                    value={status}
-                    onChange={(event) =>
-                      setStatus(event.target.value as UserStatus)
-                    }
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    {...register("status")}
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                   </select>
+                  {errors.status && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.status.message}
+                    </p>
+                  )}
                 </div>
 
                 {formError && (
@@ -454,12 +438,17 @@ export default function UsersPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setShowForm(false)}
+                    onClick={closeForm}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit">
-                    {editingId !== null ? "Save changes" : "Add user"}
+
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting
+                      ? "Saving..."
+                      : editingId !== null
+                        ? "Save changes"
+                        : "Add user"}
                   </Button>
                 </div>
               </form>
