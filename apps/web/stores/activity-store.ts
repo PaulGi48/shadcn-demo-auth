@@ -44,7 +44,9 @@ export const useActivityStore = create<ActivityState>()(
           activities: [
             {
               ...activity,
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+              id: `${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2, 9)}`,
               timestamp: Date.now(),
             },
             ...state.activities,

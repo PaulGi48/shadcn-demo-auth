@@ -15,7 +15,7 @@ import {
 } from "react-icons/fi"
 
 import { ThemeToggle } from "@/components/theme-toggle"
-import { Button } from "@workspace/ui/components/button"
+import { useActivityStore } from "@/stores/activity-store"
 
 const navigation = [
   { label: "Overview", href: "/dashboard", icon: FiHome },
@@ -40,6 +40,8 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
 
+  const addActivity = useActivityStore((state) => state.addActivity)
+
   const [authorized, setAuthorized] = React.useState(false)
   const [profileName, setProfileName] = React.useState("Admin")
   const [profilePicture, setProfilePicture] = React.useState("")
@@ -48,6 +50,7 @@ export default function DashboardLayout({
   React.useEffect(() => {
     function checkAuthentication() {
       if (localStorage.getItem("demo-authenticated") !== "true") {
+        setAuthorized(false)
         router.replace("/login")
         return
       }
@@ -55,9 +58,11 @@ export default function DashboardLayout({
       setProfileName(
         localStorage.getItem("demo-profile-name") || "Admin"
       )
+
       setProfilePicture(
         localStorage.getItem("demo-profile-picture") || ""
       )
+
       setAuthorized(true)
     }
 
@@ -98,8 +103,18 @@ export default function DashboardLayout({
   }, [])
 
   function logout() {
+    addActivity({
+      type: "logout",
+      message: `Logged out of the workspace as ${
+        localStorage.getItem("demo-profile-name") || "Admin"
+      }.`,
+    })
+
     localStorage.removeItem("demo-authenticated")
+
+    setAuthorized(false)
     setProfileMenuOpen(false)
+
     router.replace("/login")
   }
 
@@ -181,17 +196,13 @@ export default function DashboardLayout({
           <div className="flex shrink-0 items-center gap-2 sm:gap-4">
             <ThemeToggle />
 
-            <div
-              className="relative"
-              data-profile-menu
-            >
+            <div className="relative" data-profile-menu>
               <button
                 type="button"
                 aria-label="Open profile menu"
                 aria-expanded={profileMenuOpen}
-                onClick={() =>
-                  setProfileMenuOpen((open) => !open)
-                }
+                aria-haspopup="menu"
+                onClick={() => setProfileMenuOpen((open) => !open)}
                 className="flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-muted sm:gap-3 sm:px-2"
               >
                 <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted text-sm font-medium">
@@ -222,7 +233,10 @@ export default function DashboardLayout({
               </button>
 
               {profileMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border bg-card p-1.5 shadow-lg">
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-2 w-52 rounded-xl border bg-card p-1.5 shadow-lg"
+                >
                   <div className="border-b px-3 py-2">
                     <p className="truncate text-sm font-medium">
                       {profileName}
@@ -234,6 +248,7 @@ export default function DashboardLayout({
 
                   <Link
                     href="/dashboard/profile"
+                    role="menuitem"
                     onClick={() => setProfileMenuOpen(false)}
                     className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-muted"
                   >
@@ -243,6 +258,7 @@ export default function DashboardLayout({
 
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={logout}
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm text-destructive transition-colors hover:bg-muted"
                   >
@@ -256,7 +272,10 @@ export default function DashboardLayout({
         </header>
 
         {/* Mobile navigation */}
-        <nav className="flex gap-2 overflow-x-auto border-b px-4 py-2 md:hidden">
+        <nav
+          aria-label="Mobile navigation"
+          className="flex gap-2 overflow-x-auto border-b px-4 py-2 md:hidden"
+        >
           {navigation.map((item) => {
             const Icon = item.icon
 
