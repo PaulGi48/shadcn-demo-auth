@@ -35,7 +35,7 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>
 
-const QUICK_LOGIN_DURATION = 30 * 1000
+const QUICK_LOGIN_DURATION = 5 * 60 * 1000
 
 const LAST_LOGIN_EMAIL_KEY = "demo-last-login-email"
 const LAST_LOGIN_TIME_KEY = "demo-last-login-time"
