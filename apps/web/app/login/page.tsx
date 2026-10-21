@@ -34,7 +34,10 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>
 
-const QUICK_LOGIN_DELAY = 5 * 60 * 1000
+const QUICK_LOGIN_DURATION = 30 * 1000
+
+const LAST_LOGIN_EMAIL_KEY = "demo-last-login-email"
+const LAST_LOGIN_TIME_KEY = "demo-last-login-time"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -59,20 +62,48 @@ export default function LoginPage() {
 
   React.useEffect(() => {
     function loadLastLogin() {
-      const email = localStorage.getItem("demo-last-login-email") ?? ""
-      const timestamp = Number(
-        localStorage.getItem("demo-last-login-time")
+      const email = localStorage.getItem(LAST_LOGIN_EMAIL_KEY) ?? ""
+      const storedTime = Number(
+        localStorage.getItem(LAST_LOGIN_TIME_KEY)
       )
 
-      setLastLoginEmail(email)
-      setLastLoginAt(timestamp > 0 ? timestamp : null)
+      if (
+        !email ||
+        !Number.isFinite(storedTime) ||
+        storedTime <= 0 ||
+        Date.now() - storedTime >= QUICK_LOGIN_DURATION
+      ) {
+        localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
+        localStorage.removeItem(LAST_LOGIN_TIME_KEY)
+        setLastLoginEmail("")
+        setLastLoginAt(null)
+      } else {
+        setLastLoginEmail(email)
+        setLastLoginAt(storedTime)
+      }
+
       setNow(Date.now())
     }
 
     loadLastLogin()
 
     const interval = window.setInterval(() => {
-      setNow(Date.now())
+      const currentTime = Date.now()
+      setNow(currentTime)
+
+      const storedTime = Number(
+        localStorage.getItem(LAST_LOGIN_TIME_KEY)
+      )
+
+      if (
+        storedTime > 0 &&
+        currentTime - storedTime >= QUICK_LOGIN_DURATION
+      ) {
+        localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
+        localStorage.removeItem(LAST_LOGIN_TIME_KEY)
+        setLastLoginEmail("")
+        setLastLoginAt(null)
+      }
     }, 1000)
 
     window.addEventListener("focus", loadLastLogin)
@@ -83,15 +114,19 @@ export default function LoginPage() {
     }
   }, [])
 
-  const elapsed = lastLoginAt && now
-    ? now - lastLoginAt
-    : 0
+  const elapsed =
+    lastLoginAt !== null && now > 0
+      ? now - lastLoginAt
+      : 0
 
-  const remaining = Math.max(0, QUICK_LOGIN_DELAY - elapsed)
+  const remaining = Math.max(0, QUICK_LOGIN_DURATION - elapsed)
+
   const quickLoginReady =
     Boolean(lastLoginEmail) &&
     lastLoginAt !== null &&
-    elapsed >= QUICK_LOGIN_DELAY
+    now > 0 &&
+    elapsed >= 0 &&
+    elapsed < QUICK_LOGIN_DURATION
 
   const minutes = Math.floor(remaining / 60000)
   const seconds = Math.floor((remaining % 60000) / 1000)
@@ -131,20 +166,29 @@ export default function LoginPage() {
     const timestamp = Date.now()
 
     localStorage.setItem("demo-authenticated", "true")
-    localStorage.setItem("demo-last-login-email", email)
-    localStorage.setItem("demo-last-login-time", String(timestamp))
+    localStorage.setItem(LAST_LOGIN_EMAIL_KEY, email)
+    localStorage.setItem(LAST_LOGIN_TIME_KEY, String(timestamp))
 
     router.replace("/dashboard")
   }
 
   function handleQuickLogin() {
-    if (!quickLoginReady) return
+    if (!quickLoginReady || !lastLoginAt || !lastLoginEmail) {
+      return
+    }
 
-    const timestamp = Date.now()
+    const currentTime = Date.now()
+
+    if (currentTime - lastLoginAt >= QUICK_LOGIN_DURATION) {
+      localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
+      localStorage.removeItem(LAST_LOGIN_TIME_KEY)
+      setLastLoginEmail("")
+      setLastLoginAt(null)
+      setNow(currentTime)
+      return
+    }
 
     localStorage.setItem("demo-authenticated", "true")
-    localStorage.setItem("demo-last-login-time", String(timestamp))
-
     router.replace("/dashboard")
   }
 
@@ -227,9 +271,13 @@ export default function LoginPage() {
 
                   <button
                     type="button"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
                     aria-pressed={showPassword}
-                    onClick={() => setShowPassword((current) => !current)}
+                    onClick={() =>
+                      setShowPassword((current) => !current)
+                    }
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {showPassword ? (
@@ -278,13 +326,15 @@ export default function LoginPage() {
 
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">Last login</p>
+
                 <p className="truncate text-xs text-muted-foreground">
                   {lastLoginEmail}
                 </p>
+
                 <p className="mt-1 text-xs text-muted-foreground">
                   {quickLoginReady
-                    ? "Quick login is ready."
-                    : `Quick login available in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`}
+                    ? `Quick login expires in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+                    : "Quick login has expired. Sign in again."}
                 </p>
               </div>
 
