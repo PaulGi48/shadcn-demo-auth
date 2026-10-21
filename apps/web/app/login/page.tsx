@@ -2,17 +2,19 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Suspense } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
   FiArrowRight,
-  FiClock,
   FiEye,
   FiEyeOff,
   FiLock,
   FiMail,
+  FiShield,
   FiZap,
 } from "react-icons/fi"
 
@@ -30,6 +32,16 @@ import { Label } from "@workspace/ui/components/label"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { useActivityStore } from "@/stores/activity-store"
 
+const QUICK_LOGIN_DURATION = 5 * 60 * 1000
+
+const AUTH_KEY = "demo-authenticated"
+const EMAIL_KEY = "demo-last-login-email"
+const TIME_KEY = "demo-last-login-time"
+const ACCOUNTS_KEY = "demo-registered-accounts"
+
+const DEMO_EMAIL = "admin@example.com"
+const DEMO_PASSWORD = "Password123!"
+
 const loginSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
   password: z.string().min(1, "Password is required."),
@@ -37,215 +49,214 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>
 
-const QUICK_LOGIN_DURATION = 5 * 60 * 1000
+type RegisteredAccount = {
+  name: string
+  email: string
+  password: string
+  createdAt: string
+}
 
-const LAST_LOGIN_EMAIL_KEY = "demo-last-login-email"
-const LAST_LOGIN_TIME_KEY = "demo-last-login-time"
+function readAccounts(): RegisteredAccount[] {
+  try {
+    const raw = localStorage.getItem(ACCOUNTS_KEY)
+    if (!raw) return []
 
-const DEMO_EMAIL = "admin@example.com"
-const DEMO_PASSWORD = "Password123!"
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
 
-export default function LoginPage() {
+    return parsed.filter(
+      (account): account is RegisteredAccount =>
+        account !== null &&
+        typeof account === "object" &&
+        typeof account.name === "string" &&
+        typeof account.email === "string" &&
+        typeof account.password === "string" &&
+        typeof account.createdAt === "string"
+    )
+  } catch {
+    return []
+  }
+}
+
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const addActivity = useActivityStore((state) => state.addActivity)
 
   const [showPassword, setShowPassword] = React.useState(false)
-  const [now, setNow] = React.useState(0)
-  const [lastLoginEmail, setLastLoginEmail] = React.useState("")
-  const [lastLoginAt, setLastLoginAt] = React.useState<number | null>(null)
+  const [loginError, setLoginError] = React.useState("")
+  const [quickLoginRemaining, setQuickLoginRemaining] = React.useState(0)
+  const [isLoggingIn, setIsLoggingIn] = React.useState(false)
 
   const {
     register,
     handleSubmit,
-    setError,
-    clearErrors,
-    formState: { errors, isSubmitting },
+    setValue,
+    formState: { errors },
   } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      email: DEMO_EMAIL,
       password: "",
     },
   })
 
   React.useEffect(() => {
-    function loadLastLogin() {
-      const email = localStorage.getItem(LAST_LOGIN_EMAIL_KEY) ?? ""
-      const storedTime = Number(
-        localStorage.getItem(LAST_LOGIN_TIME_KEY)
-      )
+    const registeredEmail = searchParams.get("registered")
 
-      if (
-        !email ||
-        !Number.isFinite(storedTime) ||
-        storedTime <= 0 ||
-        Date.now() - storedTime >= QUICK_LOGIN_DURATION
-      ) {
-        localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
-        localStorage.removeItem(LAST_LOGIN_TIME_KEY)
-
-        setLastLoginEmail("")
-        setLastLoginAt(null)
-      } else {
-        setLastLoginEmail(email)
-        setLastLoginAt(storedTime)
-      }
-
-      setNow(Date.now())
+    if (registeredEmail) {
+      setValue("email", registeredEmail)
+      setLoginError("Account created. Please sign in.")
+      return
     }
 
-    loadLastLogin()
+    const previousEmail = localStorage.getItem(EMAIL_KEY)
+    if (previousEmail) setValue("email", previousEmail)
+  }, [searchParams, setValue])
 
-    const interval = window.setInterval(() => {
-      const currentTime = Date.now()
-      setNow(currentTime)
+  React.useEffect(() => {
+    function updateQuickLoginRemaining() {
+      const email = localStorage.getItem(EMAIL_KEY)
+      const loginTime = Number(localStorage.getItem(TIME_KEY) || 0)
 
-      const storedTime = Number(
-        localStorage.getItem(LAST_LOGIN_TIME_KEY)
+      if (!email || !loginTime) {
+        setQuickLoginRemaining(0)
+        return
+      }
+
+      const remaining = Math.max(
+        0,
+        QUICK_LOGIN_DURATION - (Date.now() - loginTime)
       )
 
-      if (
-        storedTime > 0 &&
-        currentTime - storedTime >= QUICK_LOGIN_DURATION
-      ) {
-        localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
-        localStorage.removeItem(LAST_LOGIN_TIME_KEY)
-
-        setLastLoginEmail("")
-        setLastLoginAt(null)
-      }
-    }, 1000)
-
-    window.addEventListener("focus", loadLastLogin)
-
-    return () => {
-      window.clearInterval(interval)
-      window.removeEventListener("focus", loadLastLogin)
+      setQuickLoginRemaining(Math.ceil(remaining / 1000))
     }
+
+    updateQuickLoginRemaining()
+    const interval = window.setInterval(updateQuickLoginRemaining, 1000)
+
+    return () => window.clearInterval(interval)
   }, [])
 
-  const elapsed =
-    lastLoginAt !== null && now > 0
-      ? now - lastLoginAt
-      : 0
+  function finishLogin(email: string, name: string, isQuickLogin = false) {
+    setIsLoggingIn(true)
+    setLoginError("")
 
-  const remaining = Math.max(
-    0,
-    QUICK_LOGIN_DURATION - elapsed
-  )
+    try {
+      const normalizedEmail = email.trim().toLowerCase()
 
-  const quickLoginReady =
-    Boolean(lastLoginEmail) &&
-    lastLoginAt !== null &&
-    now > 0 &&
-    elapsed >= 0 &&
-    elapsed < QUICK_LOGIN_DURATION
+      localStorage.setItem(AUTH_KEY, "true")
+      localStorage.setItem(EMAIL_KEY, normalizedEmail)
 
-  const minutes = Math.floor(remaining / 60000)
-  const seconds = Math.floor((remaining % 60000) / 1000)
+      // Preserve the original expiry when using quick login.
+      if (!isQuickLogin) {
+        localStorage.setItem(TIME_KEY, String(Date.now()))
+      }
 
-  function recordLogin(email: string) {
-    addActivity({
-      type: "login",
-      message: `Logged in as ${email}.`,
-    })
+      localStorage.setItem("demo-profile-name", name)
+
+      addActivity({
+        type: "login",
+        message: `${isQuickLogin ? "Quick login" : "Successful login"}: ${normalizedEmail}.`,
+      })
+
+      window.dispatchEvent(new Event("profile-updated"))
+      router.replace("/dashboard")
+    } catch {
+      setLoginError("Unable to complete login. Please try again.")
+      setIsLoggingIn(false)
+    }
   }
 
   function onSubmit(values: LoginValues) {
-    clearErrors()
+    setLoginError("")
 
     const email = values.email.trim().toLowerCase()
+    const password = values.password
 
-    if (
-      email !== DEMO_EMAIL ||
-      values.password !== DEMO_PASSWORD
-    ) {
-      setError("root", {
-        type: "manual",
-        message: "Incorrect email or password.",
-      })
+    if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
+      finishLogin(email, "Admin")
       return
     }
 
-    const timestamp = Date.now()
-
-    localStorage.setItem("demo-authenticated", "true")
-    localStorage.setItem(LAST_LOGIN_EMAIL_KEY, email)
-    localStorage.setItem(
-      LAST_LOGIN_TIME_KEY,
-      String(timestamp)
+    const account = readAccounts().find(
+      (item) =>
+        item.email.trim().toLowerCase() === email &&
+        item.password === password
     )
 
-    setLastLoginEmail(email)
-    setLastLoginAt(timestamp)
-    setNow(timestamp)
+    if (!account) {
+      setLoginError("Invalid email or password.")
+      return
+    }
 
-    recordLogin(email)
-
-    router.replace("/dashboard")
+    finishLogin(account.email, account.name)
   }
 
   function handleQuickLogin() {
-    if (
-      !quickLoginReady ||
-      lastLoginAt === null ||
-      !lastLoginEmail
-    ) {
+    const email = localStorage.getItem(EMAIL_KEY)
+    const loginTime = Number(localStorage.getItem(TIME_KEY) || 0)
+
+    if (!email || !loginTime) {
+      setLoginError("Quick login is unavailable. Please sign in normally.")
       return
     }
 
-    const currentTime = Date.now()
-
-    if (
-      currentTime - lastLoginAt >= QUICK_LOGIN_DURATION
-    ) {
-      localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
-      localStorage.removeItem(LAST_LOGIN_TIME_KEY)
-
-      setLastLoginEmail("")
-      setLastLoginAt(null)
-      setNow(currentTime)
-
+    if (Date.now() - loginTime >= QUICK_LOGIN_DURATION) {
+      setQuickLoginRemaining(0)
+      setLoginError("Quick login has expired. Please sign in normally.")
       return
     }
 
-    // Quick login does not extend the original five-minute window.
-    localStorage.setItem("demo-authenticated", "true")
+    const account = email === DEMO_EMAIL
+      ? { name: "Admin" }
+      : readAccounts().find(
+          (item) => item.email.toLowerCase() === email.toLowerCase()
+        )
 
-    recordLogin(lastLoginEmail)
+    if (!account) {
+      setLoginError("Account not found. Please sign in normally.")
+      return
+    }
 
-    router.replace("/dashboard")
+    finishLogin(email, account.name, true)
   }
 
+  function formatRemaining(seconds: number) {
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+
+    return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`
+  }
+
+  const quickLoginAvailable = quickLoginRemaining > 0
+
   return (
-    <main className="relative flex min-h-svh items-center justify-center bg-background px-4 py-12 text-foreground">
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+    <main className="relative flex min-h-svh items-center justify-center bg-background px-4 py-10 text-foreground">
+      <div className="absolute right-4 top-4">
         <ThemeToggle />
       </div>
 
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-5 flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-            <FiLock size={22} />
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+            <FiShield size={26} />
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="mt-5 text-3xl font-semibold tracking-tight">
             Welcome back
           </h1>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            Sign in to continue to your account.
+            Sign in to access your workspace dashboard.
           </p>
         </div>
 
         <Card className="rounded-2xl shadow-sm">
-          <CardHeader className="gap-1">
-            <CardTitle className="text-lg">
-              Sign in
-            </CardTitle>
-
+          <CardHeader>
+            <CardTitle>Sign in</CardTitle>
             <CardDescription>
-              Enter your email and password below.
+              Enter your account details below.
             </CardDescription>
           </CardHeader>
 
@@ -256,162 +267,149 @@ export default function LoginPage() {
               className="space-y-5"
             >
               <div className="space-y-2">
-                <Label htmlFor="email">
-                  Email address
-                </Label>
-
+                <Label htmlFor="email">Email address</Label>
                 <div className="relative">
                   <FiMail
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                     size={17}
                   />
-
                   <Input
                     id="email"
                     type="email"
-                    autoComplete="email"
+                    autoComplete="username"
                     placeholder="you@example.com"
-                    aria-invalid={Boolean(errors.email)}
-                    aria-describedby={
-                      errors.email ? "email-error" : undefined
-                    }
                     className="h-11 rounded-xl pl-10"
+                    aria-invalid={Boolean(errors.email)}
                     {...register("email")}
                   />
                 </div>
-
                 {errors.email && (
-                  <p
-                    id="email-error"
-                    className="text-sm text-destructive"
-                    role="alert"
-                  >
+                  <p role="alert" className="text-sm text-destructive">
                     {errors.email.message}
                   </p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">
-                  Password
-                </Label>
-
+                <Label htmlFor="password">Password</Label>
                 <div className="relative">
+                  <FiLock
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    size={17}
+                  />
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
                     placeholder="Enter your password"
+                    className="h-11 rounded-xl pl-10 pr-11"
                     aria-invalid={Boolean(errors.password)}
-                    aria-describedby={
-                      errors.password
-                        ? "password-error"
-                        : undefined
-                    }
-                    className="h-11 rounded-xl pr-11"
                     {...register("password")}
                   />
-
                   <button
                     type="button"
-                    aria-label={
-                      showPassword
-                        ? "Hide password"
-                        : "Show password"
-                    }
-                    aria-pressed={showPassword}
-                    onClick={() =>
-                      setShowPassword((current) => !current)
-                    }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setShowPassword((value) => !value)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    {showPassword ? (
-                      <FiEyeOff size={18} />
-                    ) : (
-                      <FiEye size={18} />
-                    )}
+                    {showPassword ? <FiEyeOff size={17} /> : <FiEye size={17} />}
                   </button>
                 </div>
-
                 {errors.password && (
-                  <p
-                    id="password-error"
-                    className="text-sm text-destructive"
-                    role="alert"
-                  >
+                  <p role="alert" className="text-sm text-destructive">
                     {errors.password.message}
                   </p>
                 )}
               </div>
 
-              {errors.root && (
-                <p
-                  className="text-sm text-destructive"
-                  role="alert"
-                >
-                  {errors.root.message}
+              {loginError && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {loginError}
                 </p>
               )}
 
               <Button
                 type="submit"
                 className="h-11 w-full rounded-xl"
-                disabled={isSubmitting}
+                disabled={isLoggingIn}
               >
-                Log In
+                {isLoggingIn ? "Signing in..." : "Sign in"}
                 <FiArrowRight className="ml-2" size={17} />
               </Button>
             </form>
+
+            <div className="my-5 flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">OR</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 w-full rounded-xl"
+              disabled={!quickLoginAvailable || isLoggingIn}
+              onClick={handleQuickLogin}
+            >
+              <FiZap className="mr-2" size={17} />
+              {quickLoginAvailable
+                ? `Quick login (${formatRemaining(quickLoginRemaining)})`
+                : "Quick login unavailable"}
+            </Button>
+
+            <p className="mt-4 text-center text-xs text-muted-foreground">
+              Quick login is available for five minutes after a successful sign-in.
+            </p>
           </CardContent>
         </Card>
 
-        {lastLoginEmail && (
-          <Card className="mt-4 rounded-2xl border-primary/20 shadow-sm">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                {quickLoginReady ? (
-                  <FiZap size={19} />
-                ) : (
-                  <FiClock size={19} />
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">
-                  Last login
-                </p>
-
-                <p className="truncate text-xs text-muted-foreground">
-                  {lastLoginEmail}
-                </p>
-
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {quickLoginReady
-                    ? `Quick login expires in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
-                    : "Quick login has expired. Sign in again."}
-                </p>
-              </div>
-
-              <Button
-                type="button"
-                size="sm"
-                variant={quickLoginReady ? "default" : "outline"}
-                disabled={!quickLoginReady}
-                onClick={handleQuickLogin}
-              >
-                Quick login
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          Demo email: {DEMO_EMAIL}
-          <br />
-          Demo password: {DEMO_PASSWORD}
+        <p className="text-center text-sm text-muted-foreground">
+          Don&apos;t have an account?{" "}
+          <Link
+            href="/register"
+            className="font-medium text-primary hover:underline"
+          >
+            Create an account
+          </Link>
         </p>
+
+        <div className="rounded-xl border border-dashed p-4 text-sm">
+          <p className="font-medium">Demo credentials</p>
+          <p className="mt-2 text-muted-foreground">
+            Email: {DEMO_EMAIL}
+          </p>
+          <p className="text-muted-foreground">
+            Password: {DEMO_PASSWORD}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-2 px-0"
+            onClick={() => {
+              setValue("email", DEMO_EMAIL)
+              setValue("password", DEMO_PASSWORD)
+              setLoginError("")
+            }}
+          >
+            Fill demo credentials
+          </Button>
+        </div>
       </div>
     </main>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-svh items-center justify-center bg-background">
+          <p className="text-sm text-muted-foreground">Loading login...</p>
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   )
 }

@@ -1,35 +1,41 @@
+"use client";
 
-"use client"
-
-import * as React from "react"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  FiArrowRight,
   FiEye,
   FiEyeOff,
-  FiLock,
-  FiMail,
   FiUser,
-} from "react-icons/fi"
+  FiMail,
+  FiLock,
+  FiUserPlus,
+} from "react-icons/fi";
 
-import { Button } from "@workspace/ui/components/button"
+import { Button } from "@workspace/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@workspace/ui/components/card"
-import { Input } from "@workspace/ui/components/input"
-import { Label } from "@workspace/ui/components/label"
+} from "@workspace/ui/components/card";
+import { Input } from "@workspace/ui/components/input";
+import { Label } from "@workspace/ui/components/label";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { useUsersStore } from "@/stores/users-store";
 
-import { ThemeToggle } from "@/components/theme-toggle"
+const ACCOUNTS_KEY = "demo-registered-accounts";
 
-const ACCOUNTS_KEY = "demo-registered-accounts"
+type RegisteredAccount = {
+  name: string;
+  email: string;
+  password: string;
+  createdAt: string;
+};
 
 const registrationSchema = z
   .object({
@@ -44,58 +50,52 @@ const registrationSchema = z
       .email("Enter a valid email address."),
     password: z
       .string()
-      .min(8, "Password must be at least 8 characters."),
+      .min(8, "Password must contain at least 8 characters."),
     confirmPassword: z.string(),
   })
   .refine((values) => values.password === values.confirmPassword, {
     message: "Passwords do not match.",
     path: ["confirmPassword"],
-  })
+  });
 
-type RegistrationValues = z.infer<typeof registrationSchema>
-
-type RegisteredAccount = {
-  name: string
-  email: string
-  password: string
-  createdAt: string
-}
+type RegistrationValues = z.infer<typeof registrationSchema>;
 
 function readAccounts(): RegisteredAccount[] {
   try {
-    const stored = localStorage.getItem(ACCOUNTS_KEY)
+    const stored = localStorage.getItem(ACCOUNTS_KEY);
 
-    if (!stored) return []
+    if (!stored) return [];
 
-    const parsed: unknown = JSON.parse(stored)
+    const parsed: unknown = JSON.parse(stored);
 
-    if (!Array.isArray(parsed)) return []
+    if (!Array.isArray(parsed)) return [];
 
     return parsed.filter(
       (account): account is RegisteredAccount =>
-        account !== null &&
-        typeof account === "object" &&
-        typeof account.name === "string" &&
-        typeof account.email === "string" &&
-        typeof account.password === "string" &&
-        typeof account.createdAt === "string"
-    )
+        typeof account?.name === "string" &&
+        typeof account?.email === "string" &&
+        typeof account?.password === "string"
+    );
   } catch {
-    return []
+    return [];
   }
 }
 
 export default function RegisterPage() {
-  const router = useRouter()
+  const router = useRouter();
 
-  const [showPassword, setShowPassword] = React.useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] =
-    React.useState(false)
-  const [formError, setFormError] = React.useState("")
+  const users = useUsersStore((state) => state.users);
+  const addUser = useUsersStore((state) => state.addUser);
+  const hasHydrated = useUsersStore((state) => state.hasHydrated);
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [registrationError, setRegistrationError] = useState("");
 
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<RegistrationValues>({
     resolver: zodResolver(registrationSchema),
@@ -105,265 +105,261 @@ export default function RegisterPage() {
       password: "",
       confirmPassword: "",
     },
-  })
+  });
 
-  function onSubmit(values: RegistrationValues) {
-    setFormError("")
+  // Sync accounts registered before this fix into User Management.
+  useEffect(() => {
+    if (!hasHydrated) return;
 
-    const email = values.email.trim().toLowerCase()
+    const registeredAccounts = readAccounts();
+
+    registeredAccounts.forEach((account) => {
+      const email = account.email.trim().toLowerCase();
+
+      const alreadyInUsers = useUsersStore
+        .getState()
+        .users.some(
+          (user) => user.email.trim().toLowerCase() === email
+        );
+
+      if (!alreadyInUsers) {
+        addUser({
+          name: account.name.trim(),
+          email,
+          role: "Viewer",
+          status: "Active",
+        });
+      }
+    });
+  }, [hasHydrated, addUser]);
+
+  const onSubmit = async (values: RegistrationValues) => {
+    setRegistrationError("");
+
+    const name = values.name.trim();
+    const email = values.email.trim().toLowerCase();
+
+    if (!hasHydrated) {
+      setRegistrationError("Please wait for the user data to load.");
+      return;
+    }
+
+    if (email === "admin@example.com") {
+      setError("email", {
+        type: "manual",
+        message: "This email is reserved for the demo administrator.",
+      });
+      return;
+    }
+
+    // Check existing login accounts.
+    const registeredAccounts = readAccounts();
+
+    if (
+      registeredAccounts.some(
+        (account) => account.email.trim().toLowerCase() === email
+      )
+    ) {
+      setError("email", {
+        type: "manual",
+        message: "An account with this email already exists.",
+      });
+      return;
+    }
+
+    // Also check the User Management store.
+    const emailExists = users.some(
+      (user) => user.email.trim().toLowerCase() === email
+    );
+
+    if (emailExists) {
+      setError("email", {
+        type: "manual",
+        message: "This email already exists in User Management.",
+      });
+      return;
+    }
+
+    const newAccount: RegisteredAccount = {
+      name,
+      email,
+      password: values.password,
+      createdAt: new Date().toISOString(),
+    };
 
     try {
-      const accounts = readAccounts()
-
-      if (email === "admin@example.com") {
-        setFormError(
-          "This email is reserved for the demo administrator."
-        )
-        return
-      }
-
-      if (accounts.some((account) => account.email === email)) {
-        setFormError(
-          "An account with this email already exists. Please sign in."
-        )
-        return
-      }
-
-      const account: RegisteredAccount = {
-        name: values.name.trim(),
-        email,
-        password: values.password,
-        createdAt: new Date().toISOString(),
-      }
-
+      // Save credentials for the existing demo login page.
       localStorage.setItem(
         ACCOUNTS_KEY,
-        JSON.stringify([...accounts, account])
-      )
+        JSON.stringify([...registeredAccounts, newAccount])
+      );
 
-      router.push(
-        `/login?registered=${encodeURIComponent(email)}`
-      )
+      // Add the same person to User Management.
+      addUser({
+        name,
+        email,
+        role: "Viewer",
+        status: "Active",
+      });
+
+      router.push(`/login?registered=${encodeURIComponent(email)}`);
     } catch {
-      setFormError(
-        "Unable to create your account. Please try again."
-      )
+      setRegistrationError(
+        "Registration could not be saved. Please check your browser storage and try again."
+      );
     }
-  }
+  };
 
   return (
-    <main className="relative flex min-h-svh items-center justify-center bg-background px-4 py-12 text-foreground">
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+    <main className="relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <div className="absolute right-4 top-4">
         <ThemeToggle />
       </div>
 
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-5 flex size-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-            <FiUser size={23} />
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-2 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <FiUserPlus size={24} />
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <CardTitle className="text-2xl font-bold">
             Create an account
-          </h1>
+          </CardTitle>
 
-          <p className="mt-2 text-sm text-muted-foreground">
-            Register to access your workspace.
-          </p>
-        </div>
+          <CardDescription>
+            Register to access the dashboard.
+          </CardDescription>
+        </CardHeader>
 
-        <Card className="rounded-2xl shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">
-              Registration
-            </CardTitle>
-
-            <CardDescription>
-              Enter your details to create your account.
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent>
-            <form
-              onSubmit={handleSubmit(onSubmit)}
-              noValidate
-              className="space-y-5"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="name">Full name</Label>
-
-                <div className="relative">
-                  <FiUser
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    size={17}
-                    aria-hidden="true"
-                  />
-
-                  <Input
-                    id="name"
-                    autoComplete="name"
-                    placeholder="Your full name"
-                    className="h-11 rounded-xl pl-10"
-                    aria-invalid={Boolean(errors.name)}
-                    {...register("name")}
-                  />
-                </div>
-
-                {errors.name && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.name.message}
-                  </p>
-                )}
+        <CardContent>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="name">Full name</Label>
+              <div className="relative">
+                <FiUser className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="name"
+                  placeholder="Enter your full name"
+                  className="pl-10"
+                  autoComplete="name"
+                  {...register("name")}
+                />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email address</Label>
-
-                <div className="relative">
-                  <FiMail
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    size={17}
-                    aria-hidden="true"
-                  />
-
-                  <Input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="you@example.com"
-                    className="h-11 rounded-xl pl-10"
-                    aria-invalid={Boolean(errors.email)}
-                    {...register("email")}
-                  />
-                </div>
-
-                {errors.email && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.email.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-
-                <div className="relative">
-                  <FiLock
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    size={17}
-                    aria-hidden="true"
-                  />
-
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="new-password"
-                    placeholder="At least 8 characters"
-                    className="h-11 rounded-xl pl-10 pr-11"
-                    aria-invalid={Boolean(errors.password)}
-                    {...register("password")}
-                  />
-
-                  <button
-                    type="button"
-                    aria-label={
-                      showPassword ? "Hide password" : "Show password"
-                    }
-                    onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? (
-                      <FiEyeOff size={17} />
-                    ) : (
-                      <FiEye size={17} />
-                    )}
-                  </button>
-                </div>
-
-                {errors.password && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.password.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">
-                  Confirm password
-                </Label>
-
-                <div className="relative">
-                  <FiLock
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    size={17}
-                    aria-hidden="true"
-                  />
-
-                  <Input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    autoComplete="new-password"
-                    placeholder="Re-enter your password"
-                    className="h-11 rounded-xl pl-10 pr-11"
-                    aria-invalid={Boolean(errors.confirmPassword)}
-                    {...register("confirmPassword")}
-                  />
-
-                  <button
-                    type="button"
-                    aria-label={
-                      showConfirmPassword
-                        ? "Hide confirm password"
-                        : "Show confirm password"
-                    }
-                    onClick={() =>
-                      setShowConfirmPassword((value) => !value)
-                    }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showConfirmPassword ? (
-                      <FiEyeOff size={17} />
-                    ) : (
-                      <FiEye size={17} />
-                    )}
-                  </button>
-                </div>
-
-                {errors.confirmPassword && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.confirmPassword.message}
-                  </p>
-                )}
-              </div>
-
-              {formError && (
-                <p className="text-sm text-destructive" role="alert">
-                  {formError}
+              {errors.name && (
+                <p className="text-sm text-destructive">
+                  {errors.name.message}
                 </p>
               )}
+            </div>
 
-              <Button
-                type="submit"
-                className="h-11 w-full rounded-xl"
-                disabled={isSubmitting}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email address</Label>
+              <div className="relative">
+                <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  className="pl-10"
+                  autoComplete="email"
+                  {...register("email")}
+                />
+              </div>
+              {errors.email && (
+                <p className="text-sm text-destructive">
+                  {errors.email.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="At least 8 characters"
+                  className="pl-10 pr-10"
+                  autoComplete="new-password"
+                  {...register("password")}
+                />
+                <button
+                  type="button"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() => setShowPassword((value) => !value)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                >
+                  {showPassword ? <FiEyeOff /> : <FiEye />}
+                </button>
+              </div>
+              {errors.password && (
+                <p className="text-sm text-destructive">
+                  {errors.password.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm password</Label>
+              <div className="relative">
+                <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Re-enter your password"
+                  className="pl-10 pr-10"
+                  autoComplete="new-password"
+                  {...register("confirmPassword")}
+                />
+                <button
+                  type="button"
+                  aria-label={
+                    showConfirmPassword
+                      ? "Hide confirm password"
+                      : "Show confirm password"
+                  }
+                  onClick={() =>
+                    setShowConfirmPassword((value) => !value)
+                  }
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                >
+                  {showConfirmPassword ? <FiEyeOff /> : <FiEye />}
+                </button>
+              </div>
+              {errors.confirmPassword && (
+                <p className="text-sm text-destructive">
+                  {errors.confirmPassword.message}
+                </p>
+              )}
+            </div>
+
+            {registrationError && (
+              <p className="text-sm text-destructive">
+                {registrationError}
+              </p>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isSubmitting || !hasHydrated}
+            >
+              {isSubmitting ? "Creating account..." : "Create account"}
+            </Button>
+
+            <p className="text-center text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="font-medium text-primary hover:underline"
               >
-                Create account
-                <FiArrowRight className="ml-2" size={17} />
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <p className="mt-6 text-center text-sm text-muted-foreground">
-          Already have an account?{" "}
-          <Link
-            href="/login"
-            className="font-medium text-primary hover:underline"
-          >
-            Sign in
-          </Link>
-        </p>
-      </div>
+                Sign in
+              </Link>
+            </p>
+          </form>
+        </CardContent>
+      </Card>
     </main>
-  )
+  );
 }
