@@ -79,29 +79,15 @@ const initialTransactions: Transaction[] = [
   },
 ]
 
-function getInitialTransactions(): Transaction[] {
-  if (typeof window === "undefined") return initialTransactions
-
-  try {
-    const legacy = localStorage.getItem("demo-dashboard-transactions")
-
-    if (legacy) {
-      const parsed: unknown = JSON.parse(legacy)
-      if (Array.isArray(parsed)) return parsed as Transaction[]
-    }
-  } catch {
-    // Fall back to the initial demo records.
-  }
-
-  return initialTransactions
-}
-
 type TransactionsState = {
   transactions: Transaction[]
   hasHydrated: boolean
   setHasHydrated: (value: boolean) => void
   addTransaction: (transaction: Transaction) => void
-  updateTransaction: (id: string, updates: Partial<Omit<Transaction, "id">>) => void
+  updateTransaction: (
+    id: string,
+    updates: Partial<Omit<Transaction, "id">>
+  ) => void
   deleteTransaction: (id: string) => void
 }
 
@@ -141,19 +127,6 @@ export const useTransactionsStore = create<TransactionsState>()(
         transactions: state.transactions,
       }),
       onRehydrateStorage: () => (state) => {
-        try {
-          const current = localStorage.getItem(
-            "demo-dashboard-transactions-store"
-          )
-
-          if (!current && state) {
-            const legacy = getInitialTransactions()
-            useTransactionsStore.setState({ transactions: legacy })
-          }
-        } catch {
-          // Keep initialized records if migration fails.
-        }
-
         state?.setHasHydrated(true)
       },
     }
