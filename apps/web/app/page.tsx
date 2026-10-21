@@ -5,9 +5,10 @@ import { ThemeToggle } from "@/components/theme-toggle"
 export default function Page() {
   return (
     <div className="relative flex min-h-svh p-6">
-      <div className="absolute right-6 top-6">
-        <ThemeToggle />
-      </div>
+   <div className="absolute right-6 top-6 z-50">
+  <ThemeToggle />
+  <p className="text-xs">Toggle</p>
+</div>
 
       <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
         <div>
