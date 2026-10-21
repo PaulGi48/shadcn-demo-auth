@@ -311,7 +311,7 @@ export default function LoginPage() {
                 className="h-11 w-full rounded-xl"
                 disabled={isSubmitting}
               >
-                Continue
+               Log In
                 <FiArrowRight className="ml-2" size={17} />
               </Button>
             </form>
