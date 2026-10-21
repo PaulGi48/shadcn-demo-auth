@@ -31,6 +31,7 @@ import {
   type UserRole,
   type UserStatus,
 } from "@/stores/users-store"
+import { useActivityStore } from "@/stores/activity-store"
 
 const userSchema = z.object({
   name: z.string().trim().min(2, "Name must contain at least 2 characters."),
@@ -47,6 +48,7 @@ export default function UsersPage() {
   const addUser = useUsersStore((state) => state.addUser)
   const updateUser = useUsersStore((state) => state.updateUser)
   const deleteUserFromStore = useUsersStore((state) => state.deleteUser)
+  const addActivity = useActivityStore((state) => state.addActivity)
 
   const [search, setSearch] = React.useState("")
   const [showForm, setShowForm] = React.useState(false)
@@ -134,8 +136,18 @@ export default function UsersPage() {
     try {
       if (editingId !== null) {
         updateUser(editingId, userData)
+
+        addActivity({
+          type: "user_updated",
+          message: `Updated user ${userData.name}.`,
+        })
       } else {
         addUser(userData)
+
+        addActivity({
+          type: "user_added",
+          message: `Added user ${userData.name}.`,
+        })
       }
 
       closeForm()
@@ -149,9 +161,14 @@ export default function UsersPage() {
       `Are you sure you want to delete ${user.name}?`
     )
 
-    if (confirmed) {
-      deleteUserFromStore(user.id)
-    }
+    if (!confirmed) return
+
+    deleteUserFromStore(user.id)
+
+    addActivity({
+      type: "user_deleted",
+      message: `Deleted user ${user.name}.`,
+    })
   }
 
   const filteredUsers = users.filter((user) =>
@@ -200,8 +217,12 @@ export default function UsersPage() {
         <Card className="rounded-2xl">
           <CardContent className="flex items-center justify-between p-5">
             <div>
-              <p className="text-sm text-muted-foreground">Total users</p>
-              <p className="mt-2 text-2xl font-semibold">{users.length}</p>
+              <p className="text-sm text-muted-foreground">
+                Total users
+              </p>
+              <p className="mt-2 text-2xl font-semibold">
+                {users.length}
+              </p>
             </div>
             <FiUsers className="text-primary" size={22} />
           </CardContent>
@@ -209,15 +230,23 @@ export default function UsersPage() {
 
         <Card className="rounded-2xl">
           <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">Active users</p>
-            <p className="mt-2 text-2xl font-semibold">{activeUsers}</p>
+            <p className="text-sm text-muted-foreground">
+              Active users
+            </p>
+            <p className="mt-2 text-2xl font-semibold">
+              {activeUsers}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl">
           <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">Inactive users</p>
-            <p className="mt-2 text-2xl font-semibold">{inactiveUsers}</p>
+            <p className="text-sm text-muted-foreground">
+              Inactive users
+            </p>
+            <p className="mt-2 text-2xl font-semibold">
+              {inactiveUsers}
+            </p>
           </CardContent>
         </Card>
       </section>
