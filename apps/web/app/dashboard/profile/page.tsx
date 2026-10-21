@@ -2,191 +2,346 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
-  FiEye,
-  FiEyeOff,
-  FiLock,
+  FiCamera,
+  FiImage,
   FiMail,
-  FiShield,
-  FiZap,
+  FiSave,
+  FiUser,
 } from "react-icons/fi"
 
 import { Button } from "@workspace/ui/components/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
-import { ThemeToggle } from "@workspace/ui/components/theme-toggle"
+
 import { useActivityStore } from "@/stores/activity-store"
 
-const QUICK_LOGIN_DURATION = 5 * 60 * 1000
+const PROFILE_NAME_KEY = "demo-profile-name"
+const PROFILE_PICTURE_KEY = "demo-profile-picture"
+const MAX_IMAGE_SIZE = 1024 * 1024
 
-const AUTH_KEY = "demo-authenticated"
-const EMAIL_KEY = "demo-last-login-email"
-const TIME_KEY = "demo-last-login-time"
-
-const DEMO_EMAIL = "admin@example.com"
-const DEMO_PASSWORD = "Password123!"
-
-const loginSchema = z.object({
-  email: z.string().trim().email("Enter a valid email address."),
-  password: z.string().min(1, "Password is required."),
+const profileSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Name must contain at least 2 characters.")
+    .max(60, "Name must not exceed 60 characters."),
+  email: z
+    .string()
+    .trim()
+    .email("Enter a valid email address."),
 })
 
-type LoginFormValues = z.infer<typeof loginSchema>
+type ProfileValues = z.infer<typeof profileSchema>
 
-export default function LoginPage() {
-  const router = useRouter()
-  const addActivity = useActivityStore((state) => state.addActivity)
+export default function ProfilePage() {
+  const addActivity = useActivityStore(
+    (state) => state.addActivity
+  )
 
-  const [showPassword, setShowPassword] = React.useState(false)
-  const [loginError, setLoginError] = React.useState("")
-  const [quickLoginRemaining, setQuickLoginRemaining] = React.useState(0)
-  const [isLoggingIn, setIsLoggingIn] = React.useState(false)
+  const [profilePicture, setProfilePicture] = React.useState("")
+  const [isLoaded, setIsLoaded] = React.useState(false)
+  const [savedMessage, setSavedMessage] = React.useState("")
+  const [pictureError, setPictureError] = React.useState("")
 
   const {
     register,
     handleSubmit,
-    setValue,
-    formState: { errors },
-  } = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<ProfileValues>({
+    resolver: zodResolver(profileSchema),
     defaultValues: {
-      email: DEMO_EMAIL,
-      password: "",
+      name: "Admin",
+      email: "admin@example.com",
     },
   })
 
   React.useEffect(() => {
-    function updateQuickLoginRemaining() {
-      const email = localStorage.getItem(EMAIL_KEY)
-      const loginTime = Number(localStorage.getItem(TIME_KEY) || 0)
+    const name =
+      localStorage.getItem(PROFILE_NAME_KEY) || "Admin"
 
-      if (!email || !loginTime) {
-        setQuickLoginRemaining(0)
+    const email =
+      localStorage.getItem("demo-last-login-email") ||
+      "admin@example.com"
+
+    const picture =
+      localStorage.getItem(PROFILE_PICTURE_KEY) || ""
+
+    reset({ name, email })
+    setProfilePicture(picture)
+    setIsLoaded(true)
+  }, [reset])
+
+  function onSubmit(values: ProfileValues) {
+    setSavedMessage("")
+
+    try {
+      const previousName =
+        localStorage.getItem(PROFILE_NAME_KEY) || "Admin"
+
+      const nextName = values.name.trim()
+
+      localStorage.setItem(PROFILE_NAME_KEY, nextName)
+
+      window.dispatchEvent(new Event("profile-updated"))
+
+      addActivity({
+        type: "profile_updated",
+        message:
+          previousName !== nextName
+            ? `Profile name changed from ${previousName} to ${nextName}.`
+            : "Profile settings saved.",
+      })
+
+      setSavedMessage("Your profile has been saved.")
+    } catch {
+      setSavedMessage(
+        "Unable to save your profile. Please try again."
+      )
+    }
+  }
+
+  function handlePictureChange(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    setPictureError("")
+    setSavedMessage("")
+
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    if (!file.type.startsWith("image/")) {
+      setPictureError("Please select a valid image file.")
+      event.target.value = ""
+      return
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      setPictureError("Choose an image that is 1 MB or smaller.")
+      event.target.value = ""
+      return
+    }
+
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        setPictureError("Unable to read this image.")
         return
       }
 
-      const remaining = Math.max(
-        0,
-        QUICK_LOGIN_DURATION - (Date.now() - loginTime)
-      )
+      try {
+        localStorage.setItem(
+          PROFILE_PICTURE_KEY,
+          reader.result
+        )
 
-      setQuickLoginRemaining(Math.ceil(remaining / 1000))
+        setProfilePicture(reader.result)
+
+        window.dispatchEvent(new Event("profile-updated"))
+
+        addActivity({
+          type: "profile_updated",
+          message: "Profile picture updated.",
+        })
+
+        setSavedMessage("Profile picture updated.")
+      } catch {
+        setPictureError(
+          "Unable to save the image. Try a smaller image."
+        )
+      }
     }
 
-    updateQuickLoginRemaining()
+    reader.onerror = () => {
+      setPictureError("Unable to read this image.")
+    }
 
-    const interval = window.setInterval(updateQuickLoginRemaining, 1000)
+    reader.readAsDataURL(file)
+    event.target.value = ""
+  }
 
-    return () => window.clearInterval(interval)
-  }, [])
-
-  function finishLogin(email: string, isQuickLogin = false) {
-    setIsLoggingIn(true)
-    setLoginError("")
-
+  function removePicture() {
     try {
-      const normalizedEmail = email.trim().toLowerCase()
+      localStorage.removeItem(PROFILE_PICTURE_KEY)
+      setProfilePicture("")
 
-      localStorage.setItem(AUTH_KEY, "true")
-      localStorage.setItem(EMAIL_KEY, normalizedEmail)
-      localStorage.setItem(TIME_KEY, String(Date.now()))
+      window.dispatchEvent(new Event("profile-updated"))
 
       addActivity({
-        type: "login",
-        message: `${isQuickLogin ? "Quick login" : "Successful login"}: ${normalizedEmail}.`,
+        type: "profile_updated",
+        message: "Profile picture removed.",
       })
 
-      router.push("/dashboard")
+      setSavedMessage("Profile picture removed.")
+      setPictureError("")
     } catch {
-      setLoginError("Unable to complete login. Please try again.")
-      setIsLoggingIn(false)
+      setPictureError("Unable to remove the profile picture.")
     }
   }
 
-  function onSubmit(values: LoginFormValues) {
-    const email = values.email.trim().toLowerCase()
-
-    if (
-      email !== DEMO_EMAIL &&
-      email !== "admin@example.com"
-    ) {
-      setLoginError("Invalid email or password.")
-      return
-    }
-
-    if (values.password !== DEMO_PASSWORD) {
-      setLoginError("Invalid email or password.")
-      return
-    }
-
-    finishLogin(email)
-  }
-
-  function handleQuickLogin() {
-    const email = localStorage.getItem(EMAIL_KEY)
-    const loginTime = Number(localStorage.getItem(TIME_KEY) || 0)
-
-    if (!email || !loginTime) {
-      setLoginError("Quick login is unavailable. Please sign in normally.")
-      return
-    }
-
-    const elapsed = Date.now() - loginTime
-
-    if (elapsed >= QUICK_LOGIN_DURATION) {
-      setQuickLoginRemaining(0)
-      setLoginError("Quick login has expired. Please sign in normally.")
-      return
-    }
-
-    finishLogin(email, true)
-  }
-
-  const quickLoginAvailable = quickLoginRemaining > 0
-
-  function formatRemaining(seconds: number) {
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = seconds % 60
-
-    return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`
+  if (!isLoaded) {
+    return (
+      <div className="mx-auto max-w-4xl p-6 sm:p-8">
+        <p className="text-sm text-muted-foreground">
+          Loading profile settings...
+        </p>
+      </div>
+    )
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-background px-4 py-10">
-      <div className="absolute right-4 top-4">
-        <ThemeToggle />
-      </div>
+    <div className="mx-auto max-w-4xl space-y-8 p-5 sm:p-8">
+      {/* Page heading */}
+      <section>
+        <p className="text-sm text-muted-foreground">
+          Account
+        </p>
 
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-            <FiShield size={26} />
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight">
+          Profile Settings
+        </h2>
+
+        <p className="mt-2 text-sm text-muted-foreground">
+          Manage your profile information and picture.
+        </p>
+      </section>
+
+      {/* Profile picture */}
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Profile picture</CardTitle>
+          <CardDescription>
+            Upload a picture for your workspace profile.
+            Maximum file size: 1 MB.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+            <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted text-muted-foreground">
+              {profilePicture ? (
+                <img
+                  src={profilePicture}
+                  alt="Your profile"
+                  className="size-full object-cover"
+                />
+              ) : (
+                <FiUser size={36} />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                id="profile-picture"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePictureChange}
+              />
+
+              <Button
+                type="button"
+                onClick={() =>
+                  document
+                    .getElementById("profile-picture")
+                    ?.click()
+                }
+              >
+                <FiCamera className="mr-2" size={16} />
+                Upload picture
+              </Button>
+
+              {profilePicture && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={removePicture}
+                >
+                  Remove picture
+                </Button>
+              )}
+            </div>
           </div>
 
-          <h1 className="mt-5 text-3xl font-semibold tracking-tight">
-            Welcome back
-          </h1>
+          {pictureError && (
+            <p
+              className="mt-4 text-sm text-destructive"
+              role="alert"
+            >
+              {pictureError}
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
-          <p className="mt-2 text-sm text-muted-foreground">
-            Sign in to access your workspace dashboard.
-          </p>
-        </div>
+      {/* Personal information */}
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Personal information</CardTitle>
+          <CardDescription>
+            Update your profile name and email address.
+          </CardDescription>
+        </CardHeader>
 
-        <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
+        <CardContent>
           <form
             onSubmit={handleSubmit(onSubmit)}
             noValidate
             className="space-y-5"
           >
             <div className="space-y-2">
+              <Label htmlFor="name">Full name</Label>
+
+              <div className="relative">
+                <FiUser
+                  aria-hidden="true"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  size={17}
+                />
+
+                <Input
+                  id="name"
+                  autoComplete="name"
+                  placeholder="Enter your full name"
+                  className="h-11 rounded-xl pl-10"
+                  aria-invalid={Boolean(errors.name)}
+                  aria-describedby={
+                    errors.name ? "name-error" : undefined
+                  }
+                  {...register("name")}
+                />
+              </div>
+
+              {errors.name && (
+                <p
+                  id="name-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
+                  {errors.name.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="email">Email address</Label>
 
               <div className="relative">
                 <FiMail
+                  aria-hidden="true"
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                   size={17}
                 />
@@ -194,118 +349,80 @@ export default function LoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  autoComplete="username"
-                  placeholder="admin@example.com"
+                  autoComplete="email"
+                  placeholder="Enter your email"
                   className="h-11 rounded-xl pl-10"
                   aria-invalid={Boolean(errors.email)}
+                  aria-describedby={
+                    errors.email ? "email-error" : undefined
+                  }
                   {...register("email")}
                 />
               </div>
 
               {errors.email && (
-                <p role="alert" className="text-sm text-destructive">
+                <p
+                  id="email-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
                   {errors.email.message}
                 </p>
               )}
+
+              <p className="text-xs text-muted-foreground">
+                This demo saves your profile locally. Changing this
+                email does not change your login credentials.
+              </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-
-              <div className="relative">
-                <FiLock
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  size={17}
-                />
-
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  placeholder="Enter your password"
-                  className="h-11 rounded-xl pl-10 pr-11"
-                  aria-invalid={Boolean(errors.password)}
-                  {...register("password")}
-                />
-
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showPassword ? <FiEyeOff size={17} /> : <FiEye size={17} />}
-                </button>
-              </div>
-
-              {errors.password && (
-                <p role="alert" className="text-sm text-destructive">
-                  {errors.password.message}
-                </p>
-              )}
-            </div>
-
-            {loginError && (
-              <p role="alert" className="text-sm text-destructive">
-                {loginError}
+            {savedMessage && (
+              <p
+                className="text-sm text-muted-foreground"
+                role="status"
+              >
+                {savedMessage}
               </p>
             )}
 
-            <Button
-              type="submit"
-              className="h-11 w-full rounded-xl"
-              disabled={isLoggingIn}
-            >
-              {isLoggingIn ? "Signing in..." : "Sign in"}
-            </Button>
+            <div className="flex justify-end border-t pt-5">
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="rounded-xl"
+              >
+                <FiSave className="mr-2" size={16} />
+                Save changes
+              </Button>
+            </div>
           </form>
+        </CardContent>
+      </Card>
 
-          <div className="my-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">OR</span>
-            <div className="h-px flex-1 bg-border" />
+      {/* Account details */}
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Account information</CardTitle>
+          <CardDescription>
+            Details about this demo profile.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="flex items-center gap-3">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <FiImage size={19} />
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 w-full rounded-xl"
-            disabled={!quickLoginAvailable || isLoggingIn}
-            onClick={handleQuickLogin}
-          >
-            <FiZap className="mr-2" size={17} />
-            {quickLoginAvailable
-              ? `Quick login (${formatRemaining(quickLoginRemaining)})`
-              : "Quick login unavailable"}
-          </Button>
-
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            Quick login is available for five minutes after a successful sign-in.
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-dashed p-4 text-sm">
-          <p className="font-medium">Demo credentials</p>
-          <p className="mt-2 text-muted-foreground">
-            Email: {DEMO_EMAIL}
-          </p>
-          <p className="text-muted-foreground">
-            Password: {DEMO_PASSWORD}
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2 px-0"
-            onClick={() => {
-              setValue("email", DEMO_EMAIL)
-              setValue("password", DEMO_PASSWORD)
-              setLoginError("")
-            }}
-          >
-            Fill demo credentials
-          </Button>
-        </div>
-      </div>
-    </main>
+          <div>
+            <p className="text-sm font-medium">
+              Local demo profile
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Changes are saved in this browser.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
