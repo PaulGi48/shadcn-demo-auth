@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -29,10 +30,7 @@ export function ThemeToggle() {
       variant="outline"
       size="icon"
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-onClick={() => {
-  alert("Theme button clicked")
-  setTheme(isDark ? "light" : "dark")
-}}
+      onClick={() => setTheme(isDark ? "light" : "dark")}
     >
       {isDark ? <FiSun /> : <FiMoon />}
     </Button>

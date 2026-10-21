@@ -1,7 +1,11 @@
+
 "use client"
 
 import * as React from "react"
-import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes"
+import {
+  ThemeProvider as NextThemesProvider,
+  useTheme,
+} from "next-themes"
 
 function ThemeProvider({
   children,
@@ -38,6 +42,8 @@ function ThemeHotkey() {
   const { resolvedTheme, setTheme } = useTheme()
 
   React.useEffect(() => {
+    console.log("Theme provider state:", resolvedTheme)
+
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.repeat) {
         return

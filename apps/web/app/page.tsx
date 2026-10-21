@@ -1,26 +1,49 @@
 
-import { Button } from "@workspace/ui/components/button"
+"use client"
+
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import { FiLock } from "react-icons/fi"
+
 import { ThemeToggle } from "@/components/theme-toggle"
+import { Spinner } from "@workspace/ui/components/spinner"
 
 export default function Page() {
-  return (
-    <div className="relative flex min-h-svh p-6">
-   <div className="absolute right-6 top-6 z-50">
-  <ThemeToggle />
-  <p className="text-xs">Toggle</p>
-</div>
+  const router = useRouter()
 
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Project ready!</h1>
-          <p>You may now add components and start building.</p>
-          <p>We've already added the button component for you.</p>
-          <Button className="mt-2">Button</Button>
-        </div>
-        <div className="text-muted-foreground font-mono text-xs">
-          (Press <kbd>d</kbd> to toggle dark mode)
-        </div>
+  React.useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      window.location.replace("/login")
+    }, 1800)
+
+    return () => window.clearTimeout(timeout)
+  }, [])
+
+  return (
+    <main className="relative flex min-h-svh flex-col items-center justify-center bg-background px-6 text-foreground">
+      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+        <ThemeToggle />
       </div>
-    </div>
+
+      <div className="flex flex-col items-center text-center">
+        <div className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+          <FiLock size={25} />
+        </div>
+
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Welcome
+        </h1>
+
+        <p className="mt-2 text-sm text-muted-foreground">
+          Preparing your workspace...
+        </p>
+
+        <Spinner
+          className="mt-8 size-6 text-primary"
+          role="status"
+          aria-label="Loading"
+        />
+      </div>
+    </main>
   )
 }
