@@ -4,6 +4,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
   FiArrowRight,
@@ -54,6 +55,7 @@ export default function LoginPage() {
     clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
     defaultValues: {
       email: "",
       password: "",
@@ -75,6 +77,7 @@ export default function LoginPage() {
       ) {
         localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
         localStorage.removeItem(LAST_LOGIN_TIME_KEY)
+
         setLastLoginEmail("")
         setLastLoginAt(null)
       } else {
@@ -101,6 +104,7 @@ export default function LoginPage() {
       ) {
         localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
         localStorage.removeItem(LAST_LOGIN_TIME_KEY)
+
         setLastLoginEmail("")
         setLastLoginAt(null)
       }
@@ -134,26 +138,11 @@ export default function LoginPage() {
   function onSubmit(values: LoginValues) {
     clearErrors()
 
-    const result = loginSchema.safeParse(values)
-
-    if (!result.success) {
-      for (const issue of result.error.issues) {
-        const field = issue.path[0]
-
-        if (field === "email" || field === "password") {
-          setError(field, {
-            type: "validation",
-            message: issue.message,
-          })
-        }
-      }
-
-      return
-    }
+    const email = values.email.trim().toLowerCase()
 
     if (
-      result.data.email.toLowerCase() !== "admin@example.com" ||
-      result.data.password !== "Password123!"
+      email !== "admin@example.com" ||
+      values.password !== "Password123!"
     ) {
       setError("root", {
         type: "manual",
@@ -162,7 +151,6 @@ export default function LoginPage() {
       return
     }
 
-    const email = result.data.email.toLowerCase()
     const timestamp = Date.now()
 
     localStorage.setItem("demo-authenticated", "true")
@@ -182,9 +170,11 @@ export default function LoginPage() {
     if (currentTime - lastLoginAt >= QUICK_LOGIN_DURATION) {
       localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
       localStorage.removeItem(LAST_LOGIN_TIME_KEY)
+
       setLastLoginEmail("")
       setLastLoginAt(null)
       setNow(currentTime)
+
       return
     }
 
@@ -216,6 +206,7 @@ export default function LoginPage() {
         <Card className="rounded-2xl shadow-sm">
           <CardHeader className="gap-1">
             <CardTitle className="text-lg">Sign in</CardTitle>
+
             <CardDescription>
               Enter your email and password below.
             </CardDescription>
@@ -243,13 +234,20 @@ export default function LoginPage() {
                     autoComplete="email"
                     placeholder="you@example.com"
                     aria-invalid={Boolean(errors.email)}
+                    aria-describedby={
+                      errors.email ? "email-error" : undefined
+                    }
                     className="h-11 rounded-xl pl-10"
                     {...register("email")}
                   />
                 </div>
 
                 {errors.email && (
-                  <p className="text-sm text-destructive" role="alert">
+                  <p
+                    id="email-error"
+                    className="text-sm text-destructive"
+                    role="alert"
+                  >
                     {errors.email.message}
                   </p>
                 )}
@@ -265,6 +263,9 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     placeholder="Enter your password"
                     aria-invalid={Boolean(errors.password)}
+                    aria-describedby={
+                      errors.password ? "password-error" : undefined
+                    }
                     className="h-11 rounded-xl pr-11"
                     {...register("password")}
                   />
@@ -289,7 +290,11 @@ export default function LoginPage() {
                 </div>
 
                 {errors.password && (
-                  <p className="text-sm text-destructive" role="alert">
+                  <p
+                    id="password-error"
+                    className="text-sm text-destructive"
+                    role="alert"
+                  >
                     {errors.password.message}
                   </p>
                 )}
@@ -339,6 +344,7 @@ export default function LoginPage() {
               </div>
 
               <Button
+                type="button"
                 size="sm"
                 variant={quickLoginReady ? "default" : "outline"}
                 disabled={!quickLoginReady}
