@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -12,12 +11,8 @@ export default function Page() {
   const router = useRouter()
 
   React.useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      window.location.replace("/login")
-    }, 1800)
-
-    return () => window.clearTimeout(timeout)
-  }, [])
+    router.replace("/login")
+  }, [router])
 
   return (
     <main className="relative flex min-h-svh flex-col items-center justify-center bg-background px-6 text-foreground">
@@ -35,7 +30,7 @@ export default function Page() {
         </h1>
 
         <p className="mt-2 text-sm text-muted-foreground">
-          Preparing your workspace...
+          Redirecting to login...
         </p>
 
         <Spinner
