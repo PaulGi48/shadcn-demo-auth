@@ -29,6 +29,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useUsersStore } from "@/stores/users-store";
 
 const ACCOUNTS_KEY = "demo-registered-accounts";
+const ADMIN_EMAIL = "admin@example.com";
 
 type RegisteredAccount = {
   name: string;
@@ -44,10 +45,7 @@ const registrationSchema = z
       .trim()
       .min(2, "Name must contain at least 2 characters.")
       .max(60, "Name must not exceed 60 characters."),
-    email: z
-      .string()
-      .trim()
-      .email("Enter a valid email address."),
+    email: z.string().trim().email("Enter a valid email address."),
     password: z
       .string()
       .min(8, "Password must contain at least 8 characters."),
@@ -63,34 +61,56 @@ type RegistrationValues = z.infer<typeof registrationSchema>;
 function readAccounts(): RegisteredAccount[] {
   try {
     const stored = localStorage.getItem(ACCOUNTS_KEY);
-
     if (!stored) return [];
 
     const parsed: unknown = JSON.parse(stored);
-
     if (!Array.isArray(parsed)) return [];
 
     return parsed.filter(
       (account): account is RegisteredAccount =>
-        typeof account?.name === "string" &&
-        typeof account?.email === "string" &&
-        typeof account?.password === "string"
+        account !== null &&
+        typeof account.name === "string" &&
+        typeof account.email === "string" &&
+        typeof account.password === "string"
     );
   } catch {
     return [];
   }
 }
 
+function syncRegisteredUsers() {
+  const addUser = useUsersStore.getState().addUser;
+  const currentUsers = useUsersStore.getState().users;
+  const accounts = readAccounts();
+
+  for (const account of accounts) {
+    const email = account.email.trim().toLowerCase();
+
+    if (
+      email === ADMIN_EMAIL ||
+      currentUsers.some(
+        (user) => user.email.trim().toLowerCase() === email
+      )
+    ) {
+      continue;
+    }
+
+    addUser({
+      name: account.name.trim(),
+      email,
+      role: "Viewer",
+      status: "Active",
+    });
+  }
+}
+
 export default function RegisterPage() {
   const router = useRouter();
 
-  const users = useUsersStore((state) => state.users);
-  const addUser = useUsersStore((state) => state.addUser);
   const hasHydrated = useUsersStore((state) => state.hasHydrated);
-
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [registrationError, setRegistrationError] = useState("");
+  const [formError, setFormError] = useState("");
 
   const {
     register,
@@ -107,56 +127,36 @@ export default function RegisterPage() {
     },
   });
 
-  // Sync accounts registered before this fix into User Management.
+  // Import accounts registered before this fix into User Management.
   useEffect(() => {
-    if (!hasHydrated) return;
-
-    const registeredAccounts = readAccounts();
-
-    registeredAccounts.forEach((account) => {
-      const email = account.email.trim().toLowerCase();
-
-      const alreadyInUsers = useUsersStore
-        .getState()
-        .users.some(
-          (user) => user.email.trim().toLowerCase() === email
-        );
-
-      if (!alreadyInUsers) {
-        addUser({
-          name: account.name.trim(),
-          email,
-          role: "Viewer",
-          status: "Active",
-        });
-      }
-    });
-  }, [hasHydrated, addUser]);
+    if (hasHydrated) {
+      syncRegisteredUsers();
+    }
+  }, [hasHydrated]);
 
   const onSubmit = async (values: RegistrationValues) => {
-    setRegistrationError("");
+    setFormError("");
+
+    if (!hasHydrated) {
+      setFormError("Please wait for the user list to load.");
+      return;
+    }
 
     const name = values.name.trim();
     const email = values.email.trim().toLowerCase();
 
-    if (!hasHydrated) {
-      setRegistrationError("Please wait for the user data to load.");
-      return;
-    }
-
-    if (email === "admin@example.com") {
+    if (email === ADMIN_EMAIL) {
       setError("email", {
         type: "manual",
-        message: "This email is reserved for the demo administrator.",
+        message: "This email is reserved for the administrator.",
       });
       return;
     }
 
-    // Check existing login accounts.
-    const registeredAccounts = readAccounts();
+    const accounts = readAccounts();
 
     if (
-      registeredAccounts.some(
+      accounts.some(
         (account) => account.email.trim().toLowerCase() === email
       )
     ) {
@@ -167,12 +167,13 @@ export default function RegisterPage() {
       return;
     }
 
-    // Also check the User Management store.
-    const emailExists = users.some(
-      (user) => user.email.trim().toLowerCase() === email
-    );
+    const existingUser = useUsersStore
+      .getState()
+      .users.some(
+        (user) => user.email.trim().toLowerCase() === email
+      );
 
-    if (emailExists) {
+    if (existingUser) {
       setError("email", {
         type: "manual",
         message: "This email already exists in User Management.",
@@ -188,25 +189,41 @@ export default function RegisterPage() {
     };
 
     try {
-      // Save credentials for the existing demo login page.
+      // Save credentials for the existing login page.
       localStorage.setItem(
         ACCOUNTS_KEY,
-        JSON.stringify([...registeredAccounts, newAccount])
+        JSON.stringify([...accounts, newAccount])
       );
 
-      // Add the same person to User Management.
-      addUser({
+      // Add the same user to Zustand.
+      useUsersStore.getState().addUser({
         name,
         email,
         role: "Viewer",
         status: "Active",
       });
 
+      // Verify that Zustand now contains the user.
+      const savedUser = useUsersStore
+        .getState()
+        .users.some(
+          (user) => user.email.trim().toLowerCase() === email
+        );
+
+      if (!savedUser) {
+        // Restore the previous account list if adding the user failed.
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+
+        setFormError(
+          "The account could not be added to User Management. Please try again."
+        );
+        return;
+      }
+
       router.push(`/login?registered=${encodeURIComponent(email)}`);
-    } catch {
-      setRegistrationError(
-        "Registration could not be saved. Please check your browser storage and try again."
-      );
+    } catch (error) {
+      console.error("Registration failed:", error);
+      setFormError("Registration failed. Please try again.");
     }
   };
 
@@ -240,8 +257,8 @@ export default function RegisterPage() {
                 <Input
                   id="name"
                   placeholder="Enter your full name"
-                  className="pl-10"
                   autoComplete="name"
+                  className="pl-10"
                   {...register("name")}
                 />
               </div>
@@ -260,8 +277,8 @@ export default function RegisterPage() {
                   id="email"
                   type="email"
                   placeholder="you@example.com"
-                  className="pl-10"
                   autoComplete="email"
+                  className="pl-10"
                   {...register("email")}
                 />
               </div>
@@ -280,8 +297,8 @@ export default function RegisterPage() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="At least 8 characters"
-                  className="pl-10 pr-10"
                   autoComplete="new-password"
+                  className="pl-10 pr-10"
                   {...register("password")}
                 />
                 <button
@@ -308,8 +325,8 @@ export default function RegisterPage() {
                   id="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
                   placeholder="Re-enter your password"
-                  className="pl-10 pr-10"
                   autoComplete="new-password"
+                  className="pl-10 pr-10"
                   {...register("confirmPassword")}
                 />
                 <button
@@ -334,10 +351,8 @@ export default function RegisterPage() {
               )}
             </div>
 
-            {registrationError && (
-              <p className="text-sm text-destructive">
-                {registrationError}
-              </p>
+            {formError && (
+              <p className="text-sm text-destructive">{formError}</p>
             )}
 
             <Button
