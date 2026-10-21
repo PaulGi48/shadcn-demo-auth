@@ -4,14 +4,18 @@
 import Link from "next/link"
 import {
   FiActivity,
+  FiArrowDownLeft,
+  FiArrowRight,
+  FiArrowUpRight,
   FiCreditCard,
   FiUsers,
-  FiArrowRight,
 } from "react-icons/fi"
 import {
   ResponsiveContainer,
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -43,46 +47,62 @@ function formatTimestamp(timestamp: number) {
   })
 }
 
-function getMonthlyTransactionData(
-  transactions: { date: string }[]
+function getMonthlyData(
+  transactions: {
+    date: string
+    amount: number
+    type: "Credit" | "Debit"
+  }[]
 ) {
   const now = new Date()
-  const months: { key: string; month: string; transactions: number }[] = []
 
-  for (let offset = 5; offset >= 0; offset--) {
-    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1)
+  const months = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(
+      now.getFullYear(),
+      now.getMonth() - 5 + index,
+      1
+    )
 
-    months.push({
+    return {
       key: `${date.getFullYear()}-${date.getMonth()}`,
       month: date.toLocaleString("en-NG", { month: "short" }),
       transactions: 0,
-    })
-  }
+      credits: 0,
+      debits: 0,
+    }
+  })
 
-  const counts = new Map(
+  const monthMap = new Map(
     months.map((month) => [month.key, month])
   )
 
-  for (const transaction of transactions) {
+  transactions.forEach((transaction) => {
     const date = new Date(transaction.date)
 
-    if (Number.isNaN(date.getTime())) continue
+    if (Number.isNaN(date.getTime())) return
 
     const key = `${date.getFullYear()}-${date.getMonth()}`
-    const month = counts.get(key)
+    const month = monthMap.get(key)
 
-    if (month) month.transactions += 1
-  }
+    if (!month) return
 
-  return months.map(({ month, transactions }) => ({
-    month,
-    transactions,
-  }))
+    month.transactions += 1
+
+    if (transaction.type === "Credit") {
+      month.credits += transaction.amount
+    } else {
+      month.debits += transaction.amount
+    }
+  })
+
+  return months
 }
 
 export default function DashboardPage() {
   const users = useUsersStore((state) => state.users)
-  const usersHydrated = useUsersStore((state) => state.hasHydrated)
+  const usersHydrated = useUsersStore(
+    (state) => state.hasHydrated
+  )
 
   const transactions = useTransactionsStore(
     (state) => state.transactions
@@ -91,51 +111,74 @@ export default function DashboardPage() {
     (state) => state.hasHydrated
   )
 
-  const activities = useActivityStore((state) => state.activities)
+  const activities = useActivityStore(
+    (state) => state.activities
+  )
   const activitiesHydrated = useActivityStore(
     (state) => state.hasHydrated
   )
 
   const isReady =
-    usersHydrated && transactionsHydrated && activitiesHydrated
+    usersHydrated &&
+    transactionsHydrated &&
+    activitiesHydrated
 
   const activeUsers = users.filter(
     (user) => user.status === "Active"
   ).length
 
-  const completedCredits = transactions
-    .filter(
-      (transaction) =>
-        transaction.status === "Completed" &&
-        transaction.type === "Credit"
-    )
+  const completedTransactions = transactions.filter(
+    (transaction) => transaction.status === "Completed"
+  )
+
+  const pendingTransactions = transactions.filter(
+    (transaction) => transaction.status === "Pending"
+  )
+
+  const failedTransactions = transactions.filter(
+    (transaction) => transaction.status === "Failed"
+  )
+
+  const completedCredits = completedTransactions
+    .filter((transaction) => transaction.type === "Credit")
     .reduce((total, transaction) => total + transaction.amount, 0)
 
-  const chartData = getMonthlyTransactionData(transactions)
+  const completedDebits = completedTransactions
+    .filter((transaction) => transaction.type === "Debit")
+    .reduce((total, transaction) => total + transaction.amount, 0)
+
+  const chartData = getMonthlyData(transactions)
 
   const stats = [
     {
       title: "Total users",
-      value: isReady ? users.length.toLocaleString("en-NG") : "—",
+      value: users.length.toLocaleString("en-NG"),
       description: `${activeUsers} active users`,
       icon: FiUsers,
     },
     {
       title: "Completed credits",
-      value: isReady ? naira.format(completedCredits) : "—",
-      description: "From completed credit transactions",
-      icon: FiCreditCard,
+      value: naira.format(completedCredits),
+      description: "Successful incoming transactions",
+      icon: FiArrowDownLeft,
+    },
+    {
+      title: "Completed debits",
+      value: naira.format(completedDebits),
+      description: "Successful outgoing transactions",
+      icon: FiArrowUpRight,
     },
     {
       title: "Total transactions",
-      value: isReady ? transactions.length.toLocaleString("en-NG") : "—",
-      description: "All recorded transactions",
-      icon: FiActivity,
+      value: transactions.length.toLocaleString("en-NG"),
+      description: `${completedTransactions.length} completed`,
+      icon: FiCreditCard,
     },
   ]
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 p-5 sm:p-8">
+      {/* Page heading */}
       <section>
         <p className="text-sm text-muted-foreground">
           Your workspace
@@ -150,14 +193,17 @@ export default function DashboardPage() {
         </p>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {/* Statistics */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => {
           const Icon = stat.icon
 
           return (
             <Card key={stat.title} className="rounded-2xl">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardDescription>{stat.title}</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardDescription>
+                  {stat.title}
+                </CardDescription>
 
                 <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Icon size={18} />
@@ -166,11 +212,13 @@ export default function DashboardPage() {
 
               <CardContent>
                 <CardTitle className="text-2xl font-semibold">
-                  {stat.value}
+                  {isReady ? stat.value : "—"}
                 </CardTitle>
 
                 <p className="mt-2 text-xs text-muted-foreground">
-                  {isReady ? stat.description : "Loading saved data..."}
+                  {isReady
+                    ? stat.description
+                    : "Loading saved data..."}
                 </p>
               </CardContent>
             </Card>
@@ -178,11 +226,12 @@ export default function DashboardPage() {
         })}
       </section>
 
+      {/* Transaction count chart */}
       <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle>Transaction Overview</CardTitle>
           <CardDescription>
-            Monthly transaction volume based on recorded transactions.
+            Number of recorded transactions over the last six months.
           </CardDescription>
         </CardHeader>
 
@@ -193,10 +242,15 @@ export default function DashboardPage() {
             </div>
           ) : transactions.length === 0 ? (
             <div className="flex h-[300px] flex-col items-center justify-center text-center">
-              <FiCreditCard size={28} className="mb-3 text-muted-foreground" />
-              <p className="font-medium">No transactions recorded yet</p>
+              <FiCreditCard
+                size={28}
+                className="mb-3 text-muted-foreground"
+              />
+              <p className="font-medium">
+                No transactions recorded yet
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Add transactions to see your monthly graph.
+                Add transactions to see your chart.
               </p>
               <Link
                 href="/dashboard/transactions"
@@ -244,7 +298,10 @@ export default function DashboardPage() {
                       backgroundColor: "var(--card)",
                       color: "var(--card-foreground)",
                     }}
-                    formatter={(value) => [value, "Transactions"]}
+                    formatter={(value) => [
+                      value ?? 0,
+                      "Transactions",
+                    ]}
                   />
 
                   <Line
@@ -263,6 +320,139 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
+      {/* Credit and debit chart */}
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle>Credits vs. Debits</CardTitle>
+          <CardDescription>
+            Recorded incoming and outgoing transaction amounts by month.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          {!isReady ? (
+            <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+              Loading transaction amounts...
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+              Transaction data will appear here when available.
+            </div>
+          ) : (
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={chartData}
+                  margin={{
+                    top: 10,
+                    right: 12,
+                    left: 0,
+                    bottom: 0,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="var(--border)"
+                  />
+
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 12 }}
+                  />
+
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) =>
+                      new Intl.NumberFormat("en-NG", {
+                        notation: "compact",
+                        maximumFractionDigits: 1,
+                      }).format(Number(value))
+                    }
+                  />
+
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: "12px",
+                      border: "1px solid var(--border)",
+                      backgroundColor: "var(--card)",
+                      color: "var(--card-foreground)",
+                    }}
+                    formatter={(value) => [
+                      naira.format(Number(value ?? 0)),
+                    ]}
+                  />
+
+                  <Bar
+                    dataKey="credits"
+                    name="Credits"
+                    fill="var(--primary)"
+                    radius={[4, 4, 0, 0]}
+                  />
+
+                  <Bar
+                    dataKey="debits"
+                    name="Debits"
+                    fill="var(--muted-foreground)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Transaction status summary */}
+      <section className="grid gap-4 sm:grid-cols-3">
+        <Card className="rounded-2xl">
+          <CardHeader className="pb-2">
+            <CardDescription>Completed</CardDescription>
+            <CardTitle className="text-2xl">
+              {isReady ? completedTransactions.length : "—"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              Successfully processed
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl">
+          <CardHeader className="pb-2">
+            <CardDescription>Pending</CardDescription>
+            <CardTitle className="text-2xl">
+              {isReady ? pendingTransactions.length : "—"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              Awaiting processing
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl">
+          <CardHeader className="pb-2">
+            <CardDescription>Failed</CardDescription>
+            <CardTitle className="text-2xl">
+              {isReady ? failedTransactions.length : "—"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              Unsuccessful transactions
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Recent activity */}
       <Card className="rounded-2xl">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
@@ -272,7 +462,10 @@ export default function DashboardPage() {
             </CardDescription>
           </div>
 
-          <FiActivity size={20} className="text-muted-foreground" />
+          <FiActivity
+            size={20}
+            className="text-muted-foreground"
+          />
         </CardHeader>
 
         <CardContent>
@@ -310,7 +503,9 @@ export default function DashboardPage() {
 
                   <time
                     className="pl-11 text-xs text-muted-foreground sm:pl-0 sm:text-right"
-                    dateTime={new Date(activity.timestamp).toISOString()}
+                    dateTime={new Date(
+                      activity.timestamp
+                    ).toISOString()}
                   >
                     {formatTimestamp(activity.timestamp)}
                   </time>

@@ -26,7 +26,9 @@ import {
 } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
+
 import { ThemeToggle } from "@/components/theme-toggle"
+import { useActivityStore } from "@/stores/activity-store"
 
 const loginSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
@@ -40,8 +42,12 @@ const QUICK_LOGIN_DURATION = 5 * 60 * 1000
 const LAST_LOGIN_EMAIL_KEY = "demo-last-login-email"
 const LAST_LOGIN_TIME_KEY = "demo-last-login-time"
 
+const DEMO_EMAIL = "admin@example.com"
+const DEMO_PASSWORD = "Password123!"
+
 export default function LoginPage() {
   const router = useRouter()
+  const addActivity = useActivityStore((state) => state.addActivity)
 
   const [showPassword, setShowPassword] = React.useState(false)
   const [now, setNow] = React.useState(0)
@@ -123,7 +129,10 @@ export default function LoginPage() {
       ? now - lastLoginAt
       : 0
 
-  const remaining = Math.max(0, QUICK_LOGIN_DURATION - elapsed)
+  const remaining = Math.max(
+    0,
+    QUICK_LOGIN_DURATION - elapsed
+  )
 
   const quickLoginReady =
     Boolean(lastLoginEmail) &&
@@ -135,14 +144,21 @@ export default function LoginPage() {
   const minutes = Math.floor(remaining / 60000)
   const seconds = Math.floor((remaining % 60000) / 1000)
 
+  function recordLogin(email: string) {
+    addActivity({
+      type: "login",
+      message: `Logged in as ${email}.`,
+    })
+  }
+
   function onSubmit(values: LoginValues) {
     clearErrors()
 
     const email = values.email.trim().toLowerCase()
 
     if (
-      email !== "admin@example.com" ||
-      values.password !== "Password123!"
+      email !== DEMO_EMAIL ||
+      values.password !== DEMO_PASSWORD
     ) {
       setError("root", {
         type: "manual",
@@ -155,19 +171,34 @@ export default function LoginPage() {
 
     localStorage.setItem("demo-authenticated", "true")
     localStorage.setItem(LAST_LOGIN_EMAIL_KEY, email)
-    localStorage.setItem(LAST_LOGIN_TIME_KEY, String(timestamp))
+    localStorage.setItem(
+      LAST_LOGIN_TIME_KEY,
+      String(timestamp)
+    )
+
+    setLastLoginEmail(email)
+    setLastLoginAt(timestamp)
+    setNow(timestamp)
+
+    recordLogin(email)
 
     router.replace("/dashboard")
   }
 
   function handleQuickLogin() {
-    if (!quickLoginReady || !lastLoginAt || !lastLoginEmail) {
+    if (
+      !quickLoginReady ||
+      lastLoginAt === null ||
+      !lastLoginEmail
+    ) {
       return
     }
 
     const currentTime = Date.now()
 
-    if (currentTime - lastLoginAt >= QUICK_LOGIN_DURATION) {
+    if (
+      currentTime - lastLoginAt >= QUICK_LOGIN_DURATION
+    ) {
       localStorage.removeItem(LAST_LOGIN_EMAIL_KEY)
       localStorage.removeItem(LAST_LOGIN_TIME_KEY)
 
@@ -178,7 +209,11 @@ export default function LoginPage() {
       return
     }
 
+    // Quick login does not extend the original five-minute window.
     localStorage.setItem("demo-authenticated", "true")
+
+    recordLogin(lastLoginEmail)
+
     router.replace("/dashboard")
   }
 
@@ -205,7 +240,9 @@ export default function LoginPage() {
 
         <Card className="rounded-2xl shadow-sm">
           <CardHeader className="gap-1">
-            <CardTitle className="text-lg">Sign in</CardTitle>
+            <CardTitle className="text-lg">
+              Sign in
+            </CardTitle>
 
             <CardDescription>
               Enter your email and password below.
@@ -219,7 +256,9 @@ export default function LoginPage() {
               className="space-y-5"
             >
               <div className="space-y-2">
-                <Label htmlFor="email">Email address</Label>
+                <Label htmlFor="email">
+                  Email address
+                </Label>
 
                 <div className="relative">
                   <FiMail
@@ -254,7 +293,9 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">
+                  Password
+                </Label>
 
                 <div className="relative">
                   <Input
@@ -264,7 +305,9 @@ export default function LoginPage() {
                     placeholder="Enter your password"
                     aria-invalid={Boolean(errors.password)}
                     aria-describedby={
-                      errors.password ? "password-error" : undefined
+                      errors.password
+                        ? "password-error"
+                        : undefined
                     }
                     className="h-11 rounded-xl pr-11"
                     {...register("password")}
@@ -273,7 +316,9 @@ export default function LoginPage() {
                   <button
                     type="button"
                     aria-label={
-                      showPassword ? "Hide password" : "Show password"
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
                     }
                     aria-pressed={showPassword}
                     onClick={() =>
@@ -301,7 +346,10 @@ export default function LoginPage() {
               </div>
 
               {errors.root && (
-                <p className="text-sm text-destructive" role="alert">
+                <p
+                  className="text-sm text-destructive"
+                  role="alert"
+                >
                   {errors.root.message}
                 </p>
               )}
@@ -311,7 +359,7 @@ export default function LoginPage() {
                 className="h-11 w-full rounded-xl"
                 disabled={isSubmitting}
               >
-               Log In
+                Log In
                 <FiArrowRight className="ml-2" size={17} />
               </Button>
             </form>
@@ -330,7 +378,9 @@ export default function LoginPage() {
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Last login</p>
+                <p className="text-sm font-medium">
+                  Last login
+                </p>
 
                 <p className="truncate text-xs text-muted-foreground">
                   {lastLoginEmail}
@@ -357,9 +407,9 @@ export default function LoginPage() {
         )}
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Demo email: admin@example.com
+          Demo email: {DEMO_EMAIL}
           <br />
-          Demo password: Password123!
+          Demo password: {DEMO_PASSWORD}
         </p>
       </div>
     </main>
