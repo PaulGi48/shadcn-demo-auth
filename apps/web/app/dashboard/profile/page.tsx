@@ -15,6 +15,7 @@ import {
 } from "@workspace/ui/components/card"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
+import { useActivityStore } from "@/stores/activity-store"
 
 const NAME_KEY = "demo-profile-name"
 const PICTURE_KEY = "demo-profile-picture"
@@ -22,6 +23,7 @@ const PICTURE_KEY = "demo-profile-picture"
 export default function ProfilePage() {
   const router = useRouter()
   const fileRef = React.useRef<HTMLInputElement>(null)
+  const addActivity = useActivityStore((state) => state.addActivity)
 
   const [name, setName] = React.useState("Admin")
   const [picture, setPicture] = React.useState("")
@@ -94,10 +96,16 @@ export default function ProfilePage() {
       setPictureError("")
 
       window.dispatchEvent(new Event("profile-updated"))
+
+      addActivity({
+        type: "profile_updated",
+        message: `Updated dashboard profile name to ${trimmedName}.`,
+      })
     } catch {
       setPictureError(
         "Unable to save your changes. Try a smaller picture."
       )
+      setSaved(false)
     }
   }
 
