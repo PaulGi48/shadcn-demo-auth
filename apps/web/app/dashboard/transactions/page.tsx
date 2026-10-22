@@ -4,7 +4,6 @@ import * as React from "react"
 import {
   FiArrowDownLeft,
   FiArrowUpRight,
-  FiCreditCard,
   FiEye,
   FiPlus,
   FiSearch,
@@ -45,14 +44,13 @@ const transactionSchema = z.object({
   customer: z.string().trim().min(2, "Enter the customer's name."),
   email: z.string().trim().email("Enter a valid email address."),
   type: z.enum(["Credit", "Debit"]),
-  amount: z.coerce.number().positive("Amount must be greater than zero."),
+  amount: z.number().positive("Amount must be greater than zero."),
   status: z.enum(["Completed", "Pending", "Failed"]),
   description: z.string().trim().min(2, "Enter a description."),
   date: z.string().min(1, "Select a transaction date."),
 })
 
-type TransactionFormInput = z.input<typeof transactionSchema>
-type TransactionFormValues = z.output<typeof transactionSchema>
+type TransactionFormValues = z.infer<typeof transactionSchema>
 
 function formatDate(date: string) {
   const parsed = new Date(date)
@@ -98,7 +96,7 @@ export default function TransactionsPage() {
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<TransactionFormInput, unknown, TransactionFormValues>({
+  } = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionSchema),
     defaultValues: {
       customer: "",
@@ -114,6 +112,7 @@ export default function TransactionsPage() {
   function openAddForm() {
     setEditingId(null)
     setFormError("")
+
     reset({
       customer: "",
       email: "",
@@ -123,12 +122,14 @@ export default function TransactionsPage() {
       description: "",
       date: toDateInputValue(new Date().toISOString()),
     })
+
     setShowForm(true)
   }
 
   function openEditForm(transaction: Transaction) {
     setEditingId(transaction.id)
     setFormError("")
+
     reset({
       customer: transaction.customer,
       email: transaction.email,
@@ -138,6 +139,7 @@ export default function TransactionsPage() {
       description: transaction.description,
       date: toDateInputValue(transaction.date),
     })
+
     setSelectedTransaction(null)
     setShowForm(true)
   }
@@ -155,7 +157,7 @@ export default function TransactionsPage() {
       customer: values.customer.trim(),
       email: values.email.trim().toLowerCase(),
       type: values.type as TransactionType,
-      amount: Number(values.amount),
+      amount: values.amount,
       status: values.status as TransactionStatus,
       description: values.description.trim(),
       date: new Date(values.date).toISOString(),
@@ -164,13 +166,16 @@ export default function TransactionsPage() {
     try {
       if (editingId) {
         updateTransaction(editingId, cleanData)
+
         addActivity({
           type: "transaction_updated",
           message: `Updated transaction ${editingId} for ${cleanData.customer}.`,
         })
       } else {
         const id = `TXN-${Date.now()}`
+
         addTransaction({ id, ...cleanData })
+
         addActivity({
           type: "transaction_added",
           message: `Added transaction ${id} for ${cleanData.customer}.`,
@@ -197,6 +202,7 @@ export default function TransactionsPage() {
 
   const filteredTransactions = transactions.filter((transaction) => {
     const searchText = search.trim().toLowerCase()
+
     const matchesSearch =
       `${transaction.id} ${transaction.customer} ${transaction.email} ${transaction.description}`
         .toLowerCase()
@@ -221,6 +227,7 @@ export default function TransactionsPage() {
     .reduce((sum, transaction) => sum + transaction.amount, 0)
 
   const completedCount = completedTransactions.length
+
   const pendingCount = transactions.filter(
     (transaction) => transaction.status === "Pending"
   ).length
@@ -296,6 +303,7 @@ export default function TransactionsPage() {
           <Button variant="outline" onClick={exportCsv}>
             Export CSV
           </Button>
+
           <Button onClick={openAddForm}>
             <FiPlus className="mr-2" size={16} />
             Add transaction
@@ -334,6 +342,7 @@ export default function TransactionsPage() {
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                 size={17}
               />
+
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -378,19 +387,25 @@ export default function TransactionsPage() {
                         {transaction.customer}
                       </p>
                     </td>
+
                     <td className="px-4 py-4">
                       <span className="inline-flex items-center gap-2">
                         {transaction.type === "Credit" ? (
                           <FiArrowDownLeft className="text-primary" size={16} />
                         ) : (
-                          <FiArrowUpRight className="text-muted-foreground" size={16} />
+                          <FiArrowUpRight
+                            className="text-muted-foreground"
+                            size={16}
+                          />
                         )}
                         {transaction.type}
                       </span>
                     </td>
+
                     <td className="whitespace-nowrap px-4 py-4 font-medium">
                       {naira.format(transaction.amount)}
                     </td>
+
                     <td className="px-4 py-4">
                       <span
                         className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
@@ -404,9 +419,11 @@ export default function TransactionsPage() {
                         {transaction.status}
                       </span>
                     </td>
+
                     <td className="whitespace-nowrap px-4 py-4 text-muted-foreground">
                       {formatDate(transaction.date)}
                     </td>
+
                     <td className="px-4 py-4">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -417,6 +434,7 @@ export default function TransactionsPage() {
                         >
                           <FiEye size={15} />
                         </Button>
+
                         <Button
                           variant="outline"
                           size="sm"
@@ -425,6 +443,7 @@ export default function TransactionsPage() {
                         >
                           <FiEdit2 size={15} />
                         </Button>
+
                         <Button
                           variant="outline"
                           size="sm"
@@ -440,7 +459,10 @@ export default function TransactionsPage() {
 
                 {filteredTransactions.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                    <td
+                      colSpan={6}
+                      className="px-4 py-10 text-center text-muted-foreground"
+                    >
                       No transactions found.
                     </td>
                   </tr>
@@ -474,6 +496,7 @@ export default function TransactionsPage() {
                   Enter the transaction details.
                 </CardDescription>
               </div>
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -492,7 +515,10 @@ export default function TransactionsPage() {
               >
                 <div className="space-y-2">
                   <Label htmlFor="transaction-customer">Customer</Label>
-                  <Input id="transaction-customer" {...register("customer")} />
+                  <Input
+                    id="transaction-customer"
+                    {...register("customer")}
+                  />
                   {errors.customer && (
                     <p className="text-sm text-destructive">
                       {errors.customer.message}
@@ -526,6 +552,7 @@ export default function TransactionsPage() {
                       <option value="Debit">Debit</option>
                     </select>
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="transaction-amount">Amount (₦)</Label>
                     <Input
@@ -533,7 +560,7 @@ export default function TransactionsPage() {
                       type="number"
                       min="0.01"
                       step="0.01"
-                      {...register("amount")}
+                      {...register("amount", { valueAsNumber: true })}
                     />
                     {errors.amount && (
                       <p className="text-sm text-destructive">
@@ -556,6 +583,7 @@ export default function TransactionsPage() {
                       <option value="Failed">Failed</option>
                     </select>
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="transaction-date">Date</Label>
                     <Input
@@ -591,9 +619,14 @@ export default function TransactionsPage() {
                 )}
 
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={closeForm}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeForm}
+                  >
                     Cancel
                   </Button>
+
                   <Button type="submit" disabled={isSubmitting}>
                     {isSubmitting
                       ? "Saving..."
@@ -624,6 +657,7 @@ export default function TransactionsPage() {
                   {selectedTransaction.id}
                 </CardDescription>
               </div>
+
               <Button
                 variant="ghost"
                 size="sm"
