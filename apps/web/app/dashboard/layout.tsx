@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -39,7 +38,6 @@ export default function DashboardLayout({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-
   const addActivity = useActivityStore((state) => state.addActivity)
 
   const [authorized, setAuthorized] = React.useState(false)
@@ -111,7 +109,6 @@ export default function DashboardLayout({
     })
 
     localStorage.removeItem("demo-authenticated")
-
     setAuthorized(false)
     setProfileMenuOpen(false)
 
@@ -121,8 +118,11 @@ export default function DashboardLayout({
   const currentPage =
     navigation.find((item) => item.href === pathname) ??
     (pathname.startsWith("/dashboard/profile")
-      ? navigation[3]
-      : navigation[0])
+      ? navigation.find((item) => item.href === "/dashboard/profile")
+      : undefined) ??
+    navigation.find((item) => item.href === "/dashboard")
+
+  const currentPageLabel = currentPage?.label ?? "Overview"
 
   if (!authorized) {
     return (
@@ -188,7 +188,7 @@ export default function DashboardLayout({
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground">Workspace</p>
             <h1 className="truncate text-sm font-semibold sm:text-base">
-              {currentPage.label}
+              {currentPageLabel}
             </h1>
           </div>
 
@@ -202,7 +202,9 @@ export default function DashboardLayout({
                 aria-label="Open profile menu"
                 aria-expanded={profileMenuOpen}
                 aria-haspopup="menu"
-                onClick={() => setProfileMenuOpen((open) => !open)}
+                onClick={() =>
+                  setProfileMenuOpen((open) => !open)
+                }
                 className="flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-muted sm:gap-3 sm:px-2"
               >
                 <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted text-sm font-medium">
